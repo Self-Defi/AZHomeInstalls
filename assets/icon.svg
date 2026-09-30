@@ -1,1 +1,20 @@
-<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 100 100"><rect width="100" height="100" rx="20" fill="#111111"/><path d="M18 48 50 22l32 26v31H63V58H37v21H18V48Z" fill="#fff"/><path d="M31 48 50 33l19 15" fill="none" stroke="#fff" stroke-width="7" stroke-linecap="round" stroke-linejoin="round"/><path d="M50 32v10" stroke="#fff" stroke-width="5"/><path d="M36 52h28c0 8-6 15-14 15s-14-7-14-15Z" fill="#D4A017"/><path d="M50 69v10M37 68l-7 8M63 68l7 8" stroke="#D4A017" stroke-width="5" stroke-linecap="round"/></svg>
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" role="img" aria-label="AZHomeInstalls icon">
+  <rect width="512" height="512" rx="86" fill="#111111"/>
+  <!-- House outline -->
+  <path d="M108 265 L256 142 L404 265" fill="none" stroke="#FFFFFF" stroke-width="34" stroke-linecap="round" stroke-linejoin="round"/>
+  <path d="M130 248 V390" fill="none" stroke="#FFFFFF" stroke-width="34" stroke-linecap="round"/>
+  <path d="M382 248 V390" fill="none" stroke="#FFFFFF" stroke-width="34" stroke-linecap="round"/>
+  <path d="M325 178 V128 H366 V212" fill="#FFFFFF"/>
+  <!-- Pendant cord -->
+  <path d="M256 165 V232" fill="none" stroke="#FFFFFF" stroke-width="18" stroke-linecap="round"/>
+  <!-- Lamp cap -->
+  <path d="M236 226 H276 V246 H236 Z" fill="#FFFFFF"/>
+  <!-- White lamp shade -->
+  <path d="M184 302 C190 261 219 240 256 240 C293 240 322 261 328 302 Z" fill="#FFFFFF"/>
+  <!-- Gold lamp lower rim / light -->
+  <path d="M181 303 C198 317 314 317 331 303 C326 333 298 351 256 351 C214 351 186 333 181 303 Z" fill="#D4A017"/>
+  <!-- Gold light rays -->
+  <path d="M256 370 V412" stroke="#D4A017" stroke-width="18" stroke-linecap="round"/>
+  <path d="M213 362 L184 391" stroke="#D4A017" stroke-width="18" stroke-linecap="round"/>
+  <path d="M299 362 L328 391" stroke="#D4A017" stroke-width="18" stroke-linecap="round"/>
+</svg>
