@@ -7,6 +7,56 @@ function esc(value = "") {
   }[c]));
 }
 
+
+function makeLeadCode(id) {
+  return `AZH-${String(id).padStart(6, "0")}`;
+}
+
+async function storeLead(env, lead) {
+  if (!env.LEADS_DB) {
+    console.warn("Lead database binding missing; email delivery will continue without D1 storage.");
+    return null;
+  }
+
+  const now = new Date().toISOString();
+  const result = await env.LEADS_DB.prepare(
+    `INSERT INTO leads (
+      lead_code, name, phone, email, zip, service, description,
+      photo_count, scope_acknowledgment, source, status,
+      followup_stage, next_followup_at, last_contact_at,
+      created_at, updated_at
+    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 'website', 'new', 0, ?, ?, ?, ?)`
+  ).bind(
+    "PENDING",
+    lead.name,
+    lead.phone,
+    lead.email,
+    lead.zip,
+    lead.service,
+    lead.description,
+    lead.photoCount,
+    lead.ack,
+    new Date(Date.now() + 24 * 60 * 60 * 1000).toISOString(),
+    now,
+    now,
+    now
+  ).run();
+
+  const id = Number(result.meta?.last_row_id);
+  if (!id) return null;
+
+  const leadCode = makeLeadCode(id);
+  await env.LEADS_DB.prepare(
+    "UPDATE leads SET lead_code = ?, updated_at = ? WHERE id = ?"
+  ).bind(leadCode, now, id).run();
+
+  await env.LEADS_DB.prepare(
+    "INSERT INTO lead_events (lead_id, event_type, detail) VALUES (?, 'lead_created', ?)"
+  ).bind(id, JSON.stringify({ source: "website" })).run();
+
+  return { id, leadCode };
+}
+
 function arrayBufferToBase64(buffer) {
   const bytes = new Uint8Array(buffer);
   let binary = "";
@@ -73,9 +123,22 @@ export default {
         });
       }
 
-      const subject = `New AZHomeInstalls Estimate Request — ${service}`;
+      const storedLead = await storeLead(env, {
+        name,
+        phone,
+        email,
+        zip,
+        service,
+        description,
+        photoCount: attachments.length,
+        ack
+      });
+
+      const leadRef = storedLead?.leadCode ? ` [${storedLead.leadCode}]` : "";
+      const subject = `New AZHomeInstalls Estimate Request${leadRef} — ${service}`;
       const text = [
         "NEW AZHOMEINSTALLS ESTIMATE REQUEST",
+        storedLead?.leadCode ? `Lead ID: ${storedLead.leadCode}` : "",
         "",
         `Name: ${name}`,
         `Phone: ${phone}`,
@@ -92,6 +155,7 @@ export default {
 
       const html = `
         <h2>New AZHomeInstalls Estimate Request</h2>
+        ${storedLead?.leadCode ? `<p><strong>Lead ID:</strong> ${esc(storedLead.leadCode)}</p>` : ""}
         <table cellpadding="7" cellspacing="0" border="0">
           <tr><td><strong>Name</strong></td><td>${esc(name)}</td></tr>
           <tr><td><strong>Phone</strong></td><td>${esc(phone)}</td></tr>
