@@ -1,0 +1,21 @@
+{
+  "$schema": "node_modules/wrangler/config-schema.json",
+  "name": "azhomeinstalls-estimate",
+  "main": "estimate-worker.js",
+  "compatibility_date": "2026-09-30",
+  "routes": [
+    {
+      "pattern": "azhomeinstalls.com/api/estimate*",
+      "zone_name": "azhomeinstalls.com"
+    }
+  ],
+  "send_email": [
+    {
+      "name": "EMAIL"
+    }
+  ],
+  "vars": {
+    "FROM_EMAIL": "info@azhomeinstalls.com",
+    "DESTINATION_EMAIL": "SET_THIS_TO_YOUR_VERIFIED_DESTINATION"
+  }
+}
