@@ -1,0 +1,16 @@
+{
+  "$schema": "node_modules/wrangler/config-schema.json",
+  "name": "azhomeinstalls-estimates",
+  "main": "src/index.js",
+  "compatibility_date": "2026-09-29",
+  "vars": {
+    "DOMAIN": "azhomeinstalls.com",
+    "DESTINATION_EMAIL": "cbp.cep@gmail.com"
+  },
+  "send_email": [
+    {
+      "name": "EMAIL",
+      "destination_address": "cbp.cep@gmail.com"
+    }
+  ]
+}
