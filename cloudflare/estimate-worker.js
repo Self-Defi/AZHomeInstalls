@@ -104,7 +104,7 @@ export default {
         <p>${esc(description).replace(/\n/g, "<br>")}</p>
         <p><strong>Scope acknowledgment:</strong> ${esc(ack)}</p>`;
 
-      await env.EMAIL.send({
+      const sendResult = await env.EMAIL.send({
         to: env.DESTINATION_EMAIL,
         from: { email: env.FROM_EMAIL, name: "AZHomeInstalls Website" },
         replyTo: { email, name },
@@ -114,9 +114,22 @@ export default {
         attachments
       });
 
+      console.log("Estimate email sent", {
+        messageId: sendResult?.messageId || null,
+        attachmentCount: attachments.length
+      });
+
       return Response.redirect("https://azhomeinstalls.com/thanks/", 303);
     } catch (error) {
-      console.error("Estimate submission failed", error);
+      console.error("Estimate submission failed", {
+        name: error?.name || "Error",
+        code: error?.code || null,
+        message: error?.message || String(error),
+        stack: error?.stack || null,
+        hasEmailBinding: Boolean(env?.EMAIL),
+        hasDestinationEmail: Boolean(env?.DESTINATION_EMAIL),
+        hasFromEmail: Boolean(env?.FROM_EMAIL)
+      });
       return new Response("We could not send your request. Please try again or email info@azhomeinstalls.com.", {
         status: 500,
         headers: { "Content-Type": "text/plain; charset=utf-8" }
