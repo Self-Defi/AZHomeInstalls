@@ -66,3 +66,15 @@ textarea{min-height:150px}.form-note{font-size:.9rem;color:#777}
 .form-status.success{color:#246b3a}
 .form-status.error{color:#a02b2b}
 button:disabled{opacity:.65;cursor:not-allowed;transform:none!important}
+
+.hp-field{position:absolute!important;left:-9999px!important;width:1px!important;height:1px!important;opacity:0!important}
+.upload-panel{border:1px solid var(--line);border-radius:18px;padding:20px;background:var(--soft)}
+.upload-panel>strong{font-size:1.05rem}
+.upload-panel label{display:block;margin-top:12px}
+.upload-panel input[type=file]{background:#fff}
+.consent-row{display:flex;gap:12px;align-items:flex-start;border-top:1px solid var(--line);padding-top:18px}
+.consent-row input[type=checkbox]{width:20px;height:20px;min-width:20px;margin:2px 0 0}
+.consent-row span{font-weight:600;color:#555}
+.form-submit-row{display:flex;align-items:center;gap:18px;flex-wrap:wrap}
+.form-submit-row .form-note{margin:0}
+@media(max-width:580px){.form-submit-row .btn{width:100%}}
