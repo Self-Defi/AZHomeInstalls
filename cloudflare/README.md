@@ -24,3 +24,6 @@ This Worker replaces the third-party FormSubmit dependency.
 7. Deploy and submit a test request from https://azhomeinstalls.com/estimate/
 
 Do not place API tokens or account secrets in this repository.
+
+
+Git deployment trigger: Cloudflare Builds connected to main branch with root directory `cloudflare`.
