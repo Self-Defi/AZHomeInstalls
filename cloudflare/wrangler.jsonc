@@ -21,5 +21,9 @@
       "invocation_logs": true,
       "persist": true
     }
+  },
+  "vars": {
+    "DESTINATION_EMAIL": "cbp.cep@gmail.com",
+    "FROM_EMAIL": "info@azhomeinstalls.com"
   }
 }
