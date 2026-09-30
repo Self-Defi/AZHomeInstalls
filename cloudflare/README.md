@@ -27,3 +27,6 @@ Do not place API tokens or account secrets in this repository.
 
 
 Git deployment trigger: Cloudflare Builds connected to main branch with root directory `cloudflare`.
+
+
+Root directory confirmed: Cloudflare build root is `cloudflare` on branch `main`.
