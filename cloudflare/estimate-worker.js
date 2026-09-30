@@ -104,10 +104,34 @@ export default {
         <p>${esc(description).replace(/\n/g, "<br>")}</p>
         <p><strong>Scope acknowledgment:</strong> ${esc(ack)}</p>`;
 
+      const isValidEmail = (value) =>
+        /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(String(value || "").trim());
+
+      const destinationEmail = String(env.DESTINATION_EMAIL || "").trim();
+      const fromEmail = String(env.FROM_EMAIL || "").trim();
+      const replyToEmail = String(email || "").trim();
+
+      const addressValidation = {
+        destination: isValidEmail(destinationEmail),
+        from: isValidEmail(fromEmail),
+        replyTo: isValidEmail(replyToEmail)
+      };
+
+      if (!addressValidation.destination || !addressValidation.from || !addressValidation.replyTo) {
+        console.error(
+          "Estimate email address validation failed: " +
+            JSON.stringify(addressValidation)
+        );
+        return new Response(
+          "We could not send your request. Please try again or email info@azhomeinstalls.com.",
+          { status: 500 }
+        );
+      }
+
       const sendResult = await env.EMAIL.send({
-        to: env.DESTINATION_EMAIL,
-        from: { email: env.FROM_EMAIL, name: "AZHomeInstalls Website" },
-        replyTo: { email, name },
+        to: destinationEmail,
+        from: fromEmail,
+        replyTo: replyToEmail,
         subject,
         text,
         html,
