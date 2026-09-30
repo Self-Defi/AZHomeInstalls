@@ -25,5 +25,13 @@
   "vars": {
     "DESTINATION_EMAIL": "cbp.cep@gmail.com",
     "FROM_EMAIL": "info@azhomeinstalls.com"
-  }
+  },
+  "d1_databases": [
+    {
+      "binding": "LEADS_DB",
+      "database_name": "azhomeinstalls-leads",
+      "database_id": "8cce9a83-ff34-409d-96c7-b33d1cbf134b",
+      "migrations_dir": "migrations"
+    }
+  ]
 }
