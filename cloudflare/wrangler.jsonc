@@ -3,6 +3,7 @@
   "name": "azhomeinstalls-estimate",
   "main": "estimate-worker.js",
   "compatibility_date": "2026-09-30",
+  "keep_vars": true,
   "routes": [
     {
       "pattern": "azhomeinstalls.com/api/estimate*",
@@ -13,9 +14,5 @@
     {
       "name": "EMAIL"
     }
-  ],
-  "vars": {
-    "FROM_EMAIL": "info@azhomeinstalls.com",
-    "DESTINATION_EMAIL": "SET_THIS_TO_YOUR_VERIFIED_DESTINATION"
-  }
+  ]
 }
