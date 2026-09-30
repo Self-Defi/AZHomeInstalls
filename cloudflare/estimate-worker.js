@@ -121,15 +121,15 @@ export default {
 
       return Response.redirect("https://azhomeinstalls.com/thanks/", 303);
     } catch (error) {
-      console.error("Estimate submission failed", {
+      const errorDetails = {
         name: error?.name || "Error",
         code: error?.code || null,
         message: error?.message || String(error),
-        stack: error?.stack || null,
         hasEmailBinding: Boolean(env?.EMAIL),
         hasDestinationEmail: Boolean(env?.DESTINATION_EMAIL),
         hasFromEmail: Boolean(env?.FROM_EMAIL)
-      });
+      };
+      console.error("Estimate submission failed: " + JSON.stringify(errorDetails));
       return new Response("We could not send your request. Please try again or email info@azhomeinstalls.com.", {
         status: 500,
         headers: { "Content-Type": "text/plain; charset=utf-8" }
