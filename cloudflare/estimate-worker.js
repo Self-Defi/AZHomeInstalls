@@ -128,6 +128,33 @@ async function sendImmediateConfirmation(env, lead) {
   });
 }
 
+
+function estimateTemplate(lead, amountCents) {
+  const amount = new Intl.NumberFormat("en-US",{style:"currency",currency:"USD"}).format(Number(amountCents || 0) / 100);
+  const subject = \`AZHomeInstalls estimate — \${lead.service}\`;
+  const text = [
+    \`Hi \${lead.name},\`,
+    "",
+    \`We prepared an estimate for your \${lead.service} project.\`,
+    "",
+    \`Estimate: \${amount}\`,
+    \`Reference: \${lead.lead_code}\`,
+    "",
+    "Reply to this email if you would like to move forward or if you have any questions.",
+    "",
+    "AZHomeInstalls",
+    "Residential Installation Services"
+  ].join("\\n");
+  const html = \`
+    <p>Hi \${esc(lead.name)},</p>
+    <p>We prepared an estimate for your <strong>\${esc(lead.service)}</strong> project.</p>
+    <p style="font-size:20px"><strong>Estimate: \${esc(amount)}</strong></p>
+    <p><strong>Reference:</strong> \${esc(lead.lead_code)}</p>
+    <p>Reply to this email if you would like to move forward or if you have any questions.</p>
+    <p>AZHomeInstalls<br>Residential Installation Services</p>\`;
+  return { subject, text, html, amount };
+}
+
 function followupTemplate(stage, lead) {
   if (stage === 0) {
     return {
@@ -240,12 +267,13 @@ async function handleAdminApi(request,env,url){
       "SELECT id, lead_code, name, phone, email, zip, service, status, followup_stage, next_followup_at, last_contact_at, estimate_amount_cents, scheduled_for, completed_at, unsubscribed, created_at, updated_at FROM leads ORDER BY datetime(created_at) DESC, id DESC LIMIT 500"
     ).all();
 
-    const metrics={new:0,open:0,scheduled:0,completed:0};
+    const metrics={new:0,open:0,scheduled:0,completed:0,open_value_cents:0,scheduled_value_cents:0,completed_value_cents:0};
     for(const lead of results){
+      const value=Number(lead.estimate_amount_cents||0);
       if(lead.status==="new") metrics.new++;
-      if(["new","contacted","estimate_sent"].includes(lead.status)) metrics.open++;
-      if(lead.status==="scheduled") metrics.scheduled++;
-      if(lead.status==="completed") metrics.completed++;
+      if(["new","contacted","estimate_sent"].includes(lead.status)){ metrics.open++; metrics.open_value_cents+=value; }
+      if(lead.status==="scheduled"){ metrics.scheduled++; metrics.scheduled_value_cents+=value; }
+      if(lead.status==="completed"){ metrics.completed++; metrics.completed_value_cents+=value; }
     }
     return jsonResponse({leads:results,metrics});
   }
@@ -304,6 +332,55 @@ async function handleAdminApi(request,env,url){
     }
 
     return jsonResponse({error:"Method not allowed"},405);
+  }
+
+
+  if(parts.length===5 && parts[0]==="api" && parts[1]==="admin" && parts[2]==="leads" && parts[4]==="note"){
+    const id=Number(parts[3]);
+    if(!Number.isInteger(id)||id<1) return jsonResponse({error:"Invalid lead id"},400);
+    if(request.method!=="POST") return jsonResponse({error:"Method not allowed"},405);
+    const lead=await getLeadById(env,id);
+    if(!lead) return jsonResponse({error:"Lead not found"},404);
+    const body=await request.json();
+    const note=String(body.note||"").trim();
+    if(!note) return jsonResponse({error:"Note is required"},400);
+    if(note.length>4000) return jsonResponse({error:"Note is too long"},400);
+    await logLeadEvent(env,id,"internal_note",{note});
+    return jsonResponse({ok:true});
+  }
+
+  if(parts.length===5 && parts[0]==="api" && parts[1]==="admin" && parts[2]==="leads" && parts[4]==="estimate"){
+    const id=Number(parts[3]);
+    if(!Number.isInteger(id)||id<1) return jsonResponse({error:"Invalid lead id"},400);
+    if(request.method!=="POST") return jsonResponse({error:"Method not allowed"},405);
+    if(!env.EMAIL) return jsonResponse({error:"Email binding unavailable"},503);
+
+    const lead=await getLeadById(env,id);
+    if(!lead) return jsonResponse({error:"Lead not found"},404);
+    if(Number(lead.unsubscribed||0)===1||lead.status==="do_not_contact"){
+      return jsonResponse({error:"Lead cannot receive email"},409);
+    }
+
+    const body=await request.json();
+    const amountCents=Math.round(Number(body.estimate_amount_cents));
+    if(!Number.isFinite(amountCents)||amountCents<=0) return jsonResponse({error:"Valid estimate amount is required"},400);
+
+    const template=estimateTemplate(lead,amountCents);
+    await sendCustomerMessage(env,{
+      to:lead.email,
+      subject:template.subject,
+      text:template.text,
+      html:template.html,
+      replyTo:env.FROM_EMAIL
+    });
+
+    const now=new Date().toISOString();
+    const nextFollowup=new Date(Date.now()+48*60*60*1000).toISOString();
+    await env.LEADS_DB.prepare(
+      "UPDATE leads SET status='estimate_sent', estimate_amount_cents=?, next_followup_at=?, last_contact_at=?, updated_at=? WHERE id=?"
+    ).bind(amountCents,nextFollowup,now,now,id).run();
+    await logLeadEvent(env,id,"estimate_sent",{amount_cents:amountCents,subject:template.subject});
+    return jsonResponse({ok:true,lead:await getLeadById(env,id)});
   }
 
   if(parts.length===5 && parts[0]==="api" && parts[1]==="admin" && parts[2]==="leads" && parts[4]==="followup"){
