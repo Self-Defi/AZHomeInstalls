@@ -9,50 +9,36 @@
   <link rel="icon" href="assets/icon.svg" type="image/svg+xml">
   <link rel="stylesheet" href="css/style.css">
   <style>
-    body{background:#f7f5ef}
-    .admin-shell{padding:28px 0 70px}
-    .admin-top{display:flex;align-items:center;justify-content:space-between;gap:16px;margin-bottom:22px}
-    .admin-title h1{font-size:clamp(2.2rem,5vw,4.4rem);margin:.35rem 0 .5rem}
-    .admin-title p{margin:0;color:#666}
-    .admin-grid{display:grid;grid-template-columns:repeat(4,1fr);gap:14px;margin:22px 0}
-    .metric{background:#fff;border:1px solid var(--line);border-radius:18px;padding:18px}
-    .metric b{display:block;font-size:1.8rem;margin-top:6px}
-    .toolbar{display:flex;gap:10px;flex-wrap:wrap;margin:18px 0}
-    .toolbar input,.toolbar select{margin:0;min-height:48px;background:#fff}
-    .toolbar input{flex:1;min-width:220px}.toolbar select{width:auto}
-    .lead-table-wrap{overflow:auto;background:#fff;border:1px solid var(--line);border-radius:20px}
-    .lead-table{width:100%;border-collapse:collapse;min-width:920px}
-    .lead-table th,.lead-table td{padding:15px 16px;border-bottom:1px solid var(--line);text-align:left;vertical-align:middle}
-    .lead-table th{font-size:.78rem;text-transform:uppercase;letter-spacing:.08em;color:#777;background:#fbfaf7}
-    .lead-table tr[data-id]{cursor:pointer}.lead-table tr[data-id]:hover{background:#fffaf0}
-    .status{display:inline-flex;padding:6px 9px;border-radius:999px;background:#efede6;font-size:.78rem;font-weight:850}
+    body{background:#f7f5ef}.admin-shell{padding:28px 0 70px}.admin-top{display:flex;align-items:center;justify-content:space-between;gap:16px;margin-bottom:22px}
+    .admin-title h1{font-size:clamp(2.2rem,5vw,4.4rem);margin:.35rem 0 .5rem}.admin-title p{margin:0;color:#666}
+    .admin-grid{display:grid;grid-template-columns:repeat(4,1fr);gap:14px;margin:22px 0}.metric{background:#fff;border:1px solid var(--line);border-radius:18px;padding:18px}.metric b{display:block;font-size:1.8rem;margin-top:6px}
+    .toolbar{display:flex;gap:10px;flex-wrap:wrap;margin:18px 0}.toolbar input,.toolbar select{margin:0;min-height:48px;background:#fff}.toolbar input{flex:1;min-width:220px}.toolbar select{width:auto}
+    .lead-table-wrap{overflow:auto;background:#fff;border:1px solid var(--line);border-radius:20px}.lead-table{width:100%;border-collapse:collapse;min-width:980px}
+    .lead-table th,.lead-table td{padding:15px 16px;border-bottom:1px solid var(--line);text-align:left;vertical-align:middle}.lead-table th{font-size:.78rem;text-transform:uppercase;letter-spacing:.08em;color:#777;background:#fbfaf7}
+    .lead-table tr[data-id]{cursor:pointer}.lead-table tr[data-id]:hover{background:#fffaf0}.status{display:inline-flex;padding:6px 9px;border-radius:999px;background:#efede6;font-size:.78rem;font-weight:850}
     .status.new{background:#fff2c7}.status.contacted{background:#eaf2ff}.status.estimate_sent{background:#eee7ff}.status.scheduled{background:#def6e7}.status.completed{background:#d9f3e2}.status.lost,.status.do_not_contact{background:#f2e3e3}
-    .notice{background:#111;color:#fff;border-radius:18px;padding:18px;margin:18px 0}.notice strong{color:var(--gold2)}
-    .muted{color:#777}.empty{padding:42px;text-align:center;color:#777}
-    dialog{width:min(760px,calc(100% - 24px));border:0;border-radius:22px;padding:0;box-shadow:0 30px 90px rgba(0,0,0,.25)}
-    dialog::backdrop{background:rgba(0,0,0,.45)}
-    .modal-head,.modal-body{padding:22px}.modal-head{display:flex;justify-content:space-between;align-items:center;border-bottom:1px solid var(--line)}
-    .modal-head h2{font-size:1.7rem;margin:0}.modal-close{border:0;background:#eee;border-radius:12px;width:42px;height:42px;font-size:1.35rem}
-    .detail-grid{display:grid;grid-template-columns:1fr 1fr;gap:14px}.detail{border:1px solid var(--line);border-radius:14px;padding:14px}.detail small{display:block;color:#777}.detail strong{display:block;margin-top:4px}
-    .timeline{margin-top:20px}.event{border-left:3px solid var(--gold);padding:4px 0 16px 14px;margin-left:5px}.event small{color:#777}
-    @media(max-width:780px){.admin-grid{grid-template-columns:1fr 1fr}.admin-top{align-items:flex-start}.detail-grid{grid-template-columns:1fr}.lead-table-wrap{border-radius:14px}}
+    .notice{background:#111;color:#fff;border-radius:18px;padding:18px;margin:18px 0}.notice strong{color:var(--gold2)}.notice.ok{background:#173b27}.notice.error{background:#5a2020}
+    .muted{color:#777}.empty{padding:42px;text-align:center;color:#777}.money{font-variant-numeric:tabular-nums}
+    dialog{width:min(820px,calc(100% - 24px));border:0;border-radius:22px;padding:0;box-shadow:0 30px 90px rgba(0,0,0,.25)}dialog::backdrop{background:rgba(0,0,0,.45)}
+    .modal-head,.modal-body{padding:22px}.modal-head{display:flex;justify-content:space-between;align-items:center;border-bottom:1px solid var(--line)}.modal-head h2{font-size:1.7rem;margin:0}.modal-close{border:0;background:#eee;border-radius:12px;width:42px;height:42px;font-size:1.35rem}
+    .detail-grid{display:grid;grid-template-columns:1fr 1fr;gap:14px}.detail{border:1px solid var(--line);border-radius:14px;padding:14px}.detail small{display:block;color:#777}.detail strong{display:block;margin-top:4px;word-break:break-word}
+    .edit-grid{display:grid;grid-template-columns:1fr 1fr;gap:14px;margin-top:18px}.edit-grid label{font-weight:800}.edit-grid input,.edit-grid select{margin-top:6px;background:#fff}.span2{grid-column:1/-1}
+    .actions{display:flex;gap:10px;flex-wrap:wrap;margin-top:18px}.timeline{margin-top:24px}.event{border-left:3px solid var(--gold);padding:4px 0 16px 14px;margin-left:5px}.event small{color:#777}.event code{white-space:pre-wrap;word-break:break-word;font-size:.78rem}
+    @media(max-width:780px){.admin-grid{grid-template-columns:1fr 1fr}.admin-top{align-items:flex-start}.detail-grid,.edit-grid{grid-template-columns:1fr}.span2{grid-column:auto}.lead-table-wrap{border-radius:14px}}
   </style>
 </head>
 <body>
 <header class="site-header">
   <div class="container nav">
-    <a class="brand" href=""><img src="assets/icon.svg" alt=""><span>AZHome<span class="gold">Installs</span><small class="brand-sub">Lead Management</small></span></a>
-    <a class="btn btn-dark" href="">Public Site</a>
+    <a class="brand" href="/"><img src="assets/icon.svg" alt=""><span>AZHome<span class="gold">Installs</span><small class="brand-sub">Lead Management</small></span></a>
+    <a class="btn btn-dark" href="/">Public Site</a>
   </div>
 </header>
 
 <main class="admin-shell">
   <div class="container">
-    <div class="admin-top">
-      <div class="admin-title"><div class="eyebrow">Internal CRM</div><h1>Lead management</h1><p>Website leads, follow-ups, and pipeline status.</p></div>
-    </div>
-
-    <div class="notice" id="notice"><strong>Setup in progress:</strong> this dashboard will connect to the protected Cloudflare lead API after access control is enabled.</div>
+    <div class="admin-top"><div class="admin-title"><div class="eyebrow">Internal CRM</div><h1>Lead management</h1><p>Website leads, follow-ups, scheduling, and pipeline status.</p></div></div>
+    <div class="notice" id="notice"><strong>Connecting:</strong> loading protected lead data…</div>
 
     <section id="crm">
       <div class="admin-grid">
@@ -61,23 +47,103 @@
         <div class="metric"><span class="muted">Scheduled</span><b id="mScheduled">—</b></div>
         <div class="metric"><span class="muted">Completed</span><b id="mCompleted">—</b></div>
       </div>
-
       <div class="toolbar">
-        <input id="search" type="search" placeholder="Search name, lead ID, email, service…" disabled>
-        <select id="statusFilter" disabled>
-          <option>All statuses</option>
+        <input id="search" type="search" placeholder="Search name, lead ID, email, service…">
+        <select id="statusFilter">
+          <option value="">All statuses</option><option value="new">New</option><option value="contacted">Contacted</option><option value="estimate_sent">Estimate sent</option><option value="scheduled">Scheduled</option><option value="completed">Completed</option><option value="lost">Lost</option><option value="do_not_contact">Do not contact</option>
         </select>
-        <button class="btn btn-outline" type="button" disabled>Refresh</button>
+        <button class="btn btn-outline" id="refreshBtn" type="button">Refresh</button>
       </div>
-
       <div class="lead-table-wrap">
         <table class="lead-table">
-          <thead><tr><th>Lead</th><th>Customer</th><th>Service</th><th>Status</th><th>Submitted (AZ)</th><th>Next follow-up (AZ)</th></tr></thead>
-          <tbody><tr><td colspan="6" class="empty">Protected CRM connection pending.</td></tr></tbody>
+          <thead><tr><th>Lead</th><th>Customer</th><th>Service</th><th>Status</th><th>Estimate</th><th>Submitted (AZ)</th><th>Next follow-up (AZ)</th></tr></thead>
+          <tbody id="leadRows"><tr><td colspan="7" class="empty">Loading leads…</td></tr></tbody>
         </table>
       </div>
     </section>
   </div>
 </main>
+
+<dialog id="leadDialog">
+  <div class="modal-head"><h2 id="modalTitle">Lead</h2><button class="modal-close" id="closeDialog" aria-label="Close">×</button></div>
+  <div class="modal-body">
+    <div class="detail-grid" id="leadDetails"></div>
+    <div class="edit-grid">
+      <label>Status<select id="editStatus"><option value="new">New</option><option value="contacted">Contacted</option><option value="estimate_sent">Estimate sent</option><option value="scheduled">Scheduled</option><option value="completed">Completed</option><option value="lost">Lost</option><option value="do_not_contact">Do not contact</option></select></label>
+      <label>Estimate amount ($)<input id="editEstimate" type="number" min="0" step="0.01" placeholder="0.00"></label>
+      <label>Scheduled for<input id="editScheduled" type="datetime-local"></label>
+      <label>Next follow-up<input id="editFollowup" type="datetime-local"></label>
+      <label class="span2"><input id="editNurture" type="checkbox" style="width:auto;margin-right:8px"> Automated nurture active</label>
+    </div>
+    <div class="actions">
+      <button class="btn btn-dark" id="saveLead" type="button">Save changes</button>
+      <button class="btn btn-outline" id="sendFollowup" type="button">Send follow-up now</button>
+    </div>
+    <div class="timeline"><h3>Lead history</h3><div id="eventList"></div></div>
+  </div>
+</dialog>
+
+<script>
+const API="/api/admin/leads";
+const AZ_TZ="America/Phoenix";
+let leads=[];
+let activeLead=null;
+
+const escHtml=(v="")=>String(v).replace(/[&<>"']/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#039;"}[c]));
+const statusLabel=s=>({new:"New",contacted:"Contacted",estimate_sent:"Estimate sent",scheduled:"Scheduled",completed:"Completed",lost:"Lost",do_not_contact:"Do not contact"}[s]||s);
+const fmtAZ=v=>{if(!v)return"—";const d=new Date(v);if(Number.isNaN(d.getTime()))return v;return new Intl.DateTimeFormat("en-US",{timeZone:AZ_TZ,month:"short",day:"numeric",year:"numeric",hour:"numeric",minute:"2-digit"}).format(d)};
+const money=c=>c==null?"—":new Intl.NumberFormat("en-US",{style:"currency",currency:"USD"}).format(Number(c)/100);
+const toLocalInput=v=>{if(!v)return"";const d=new Date(v);if(Number.isNaN(d.getTime()))return"";const p=new Intl.DateTimeFormat("en-CA",{timeZone:AZ_TZ,year:"numeric",month:"2-digit",day:"2-digit",hour:"2-digit",minute:"2-digit",hourCycle:"h23"}).formatToParts(d).reduce((o,x)=>(o[x.type]=x.value,o),{});return p.year+"-"+p.month+"-"+p.day+"T"+p.hour+":"+p.minute};
+const azInputToISO=v=>{if(!v)return null;const [date,time]=v.split("T");const [y,m,d]=date.split("-").map(Number);const [hh,mm]=time.split(":").map(Number);return new Date(Date.UTC(y,m-1,d,hh+7,mm)).toISOString()};
+
+function setNotice(msg,type="ok"){const n=document.getElementById("notice");n.className="notice "+type;n.innerHTML=msg}
+function render(){
+  const q=document.getElementById("search").value.trim().toLowerCase(),f=document.getElementById("statusFilter").value;
+  const filtered=leads.filter(l=>(!f||l.status===f)&&(!q||[l.lead_code,l.name,l.email,l.phone,l.service].some(v=>String(v||"").toLowerCase().includes(q))));
+  const rows=document.getElementById("leadRows");
+  if(!filtered.length){rows.innerHTML='<tr><td colspan="7" class="empty">No leads match this view.</td></tr>';return}
+  rows.innerHTML=filtered.map(l=>'<tr data-id="'+l.id+'"><td><strong>'+escHtml(l.lead_code)+'</strong></td><td><strong>'+escHtml(l.name)+'</strong><br><span class="muted">'+escHtml(l.email)+'</span></td><td>'+escHtml(l.service)+'</td><td><span class="status '+escHtml(l.status)+'">'+escHtml(statusLabel(l.status))+'</span></td><td class="money">'+money(l.estimate_amount_cents)+'</td><td>'+fmtAZ(l.created_at)+'</td><td>'+fmtAZ(l.next_followup_at)+'</td></tr>').join("");
+  rows.querySelectorAll("tr[data-id]").forEach(r=>r.addEventListener("click",()=>openLead(Number(r.dataset.id))));
+}
+async function loadLeads(){
+  setNotice("<strong>Connecting:</strong> loading protected lead data…","");
+  try{
+    const r=await fetch(API,{credentials:"same-origin",headers:{"Accept":"application/json"}});if(!r.ok)throw new Error("HTTP "+r.status);
+    const data=await r.json();leads=data.leads||[];
+    document.getElementById("mNew").textContent=data.metrics?.new??0;document.getElementById("mOpen").textContent=data.metrics?.open??0;document.getElementById("mScheduled").textContent=data.metrics?.scheduled??0;document.getElementById("mCompleted").textContent=data.metrics?.completed??0;
+    setNotice("<strong>Live:</strong> protected D1 lead data is connected.","ok");render();
+  }catch(e){setNotice("<strong>Connection error:</strong> "+escHtml(e.message)+". Refresh after the Worker deployment finishes.","error");document.getElementById("leadRows").innerHTML='<tr><td colspan="7" class="empty">Unable to load protected CRM data.</td></tr>'}
+}
+async function openLead(id){
+  try{
+    const r=await fetch(API+"/"+id,{credentials:"same-origin",headers:{"Accept":"application/json"}});if(!r.ok)throw new Error("HTTP "+r.status);
+    const data=await r.json();activeLead=data.lead;
+    document.getElementById("modalTitle").textContent=activeLead.lead_code+" — "+activeLead.name;
+    document.getElementById("leadDetails").innerHTML=[
+      ["Phone",activeLead.phone],["Email",activeLead.email],["ZIP",activeLead.zip],["Service",activeLead.service],
+      ["Submitted (AZ)",fmtAZ(activeLead.created_at)],["Last contact (AZ)",fmtAZ(activeLead.last_contact_at)],
+      ["Description",activeLead.description],["Photos",activeLead.photo_count]
+    ].map(([a,b])=>'<div class="detail"><small>'+escHtml(a)+'</small><strong>'+escHtml(b??"—")+'</strong></div>').join("");
+    document.getElementById("editStatus").value=activeLead.status;document.getElementById("editEstimate").value=activeLead.estimate_amount_cents==null?"":(Number(activeLead.estimate_amount_cents)/100).toFixed(2);
+    document.getElementById("editScheduled").value=toLocalInput(activeLead.scheduled_for);document.getElementById("editFollowup").value=toLocalInput(activeLead.next_followup_at);document.getElementById("editNurture").checked=!Number(activeLead.unsubscribed||0);
+    const events=data.events||[];document.getElementById("eventList").innerHTML=events.length?events.map(e=>'<div class="event"><strong>'+escHtml(e.event_type.replaceAll("_"," "))+'</strong><br><small>'+fmtAZ(e.created_at)+'</small>'+(e.detail?'<br><code>'+escHtml(e.detail)+'</code>':"")+'</div>').join(""):'<p class="muted">No history yet.</p>';
+    document.getElementById("leadDialog").showModal();
+  }catch(e){setNotice("<strong>Lead error:</strong> "+escHtml(e.message),"error")}
+}
+async function saveLead(){
+  if(!activeLead)return;
+  const amount=document.getElementById("editEstimate").value;
+  const payload={status:document.getElementById("editStatus").value,estimate_amount_cents:amount===""?null:Math.round(Number(amount)*100),scheduled_for:azInputToISO(document.getElementById("editScheduled").value),next_followup_at:azInputToISO(document.getElementById("editFollowup").value),unsubscribed:!document.getElementById("editNurture").checked};
+  const b=document.getElementById("saveLead");b.disabled=true;b.textContent="Saving…";
+  try{const r=await fetch(API+"/"+activeLead.id,{method:"PATCH",credentials:"same-origin",headers:{"Content-Type":"application/json","Accept":"application/json"},body:JSON.stringify(payload)});const d=await r.json();if(!r.ok)throw new Error(d.error||("HTTP "+r.status));document.getElementById("leadDialog").close();await loadLeads()}catch(e){alert("Save failed: "+e.message)}finally{b.disabled=false;b.textContent="Save changes"}
+}
+async function sendFollowup(){
+  if(!activeLead)return;if(!confirm("Send a follow-up email to "+activeLead.email+" now?"))return;
+  const b=document.getElementById("sendFollowup");b.disabled=true;b.textContent="Sending…";
+  try{const r=await fetch(API+"/"+activeLead.id+"/followup",{method:"POST",credentials:"same-origin",headers:{"Accept":"application/json"}});const d=await r.json();if(!r.ok)throw new Error(d.error||("HTTP "+r.status));document.getElementById("leadDialog").close();await loadLeads();setNotice("<strong>Sent:</strong> follow-up email delivered to "+escHtml(activeLead.email)+".","ok")}catch(e){alert("Follow-up failed: "+e.message)}finally{b.disabled=false;b.textContent="Send follow-up now"}
+}
+document.getElementById("search").addEventListener("input",render);document.getElementById("statusFilter").addEventListener("change",render);document.getElementById("refreshBtn").addEventListener("click",loadLeads);document.getElementById("closeDialog").addEventListener("click",()=>document.getElementById("leadDialog").close());document.getElementById("saveLead").addEventListener("click",saveLead);document.getElementById("sendFollowup").addEventListener("click",sendFollowup);
+loadLeads();
+</script>
 </body>
 </html>
