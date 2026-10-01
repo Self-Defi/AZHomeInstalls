@@ -323,6 +323,8 @@ async function sendFollowup(){
 document.getElementById("addSlot").addEventListener("click",addSlot);
 document.getElementById("editStatus").addEventListener("change",e=>updateNurtureControl(e.target.value));
 document.getElementById("search").addEventListener("input",render);document.getElementById("statusFilter").addEventListener("change",render);document.getElementById("refreshBtn").addEventListener("click",loadLeads);document.getElementById("closeDialog").addEventListener("click",()=>document.getElementById("leadDialog").close());document.getElementById("saveLead").addEventListener("click",saveLead);document.getElementById("sendEstimate").addEventListener("click",sendEstimate);document.getElementById("saveNote").addEventListener("click",saveNote);document.getElementById("sendFollowup").addEventListener("click",sendFollowup);
+loadCalendarStatus();
+loadSlots();
 loadLeads();
 </script>
 </body>
