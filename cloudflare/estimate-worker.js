@@ -103,6 +103,32 @@ async function ensureEstimateResponseSchema(env){
   ).run();
 }
 
+async function ensureSchedulingSchema(env){
+  if(!env.LEADS_DB) return;
+  await env.LEADS_DB.prepare(
+    `CREATE TABLE IF NOT EXISTS installation_slots (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      start_at TEXT NOT NULL UNIQUE,
+      booked_lead_id INTEGER,
+      created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+      booked_at TEXT,
+      FOREIGN KEY (booked_lead_id) REFERENCES leads(id) ON DELETE SET NULL
+    )`
+  ).run();
+  await env.LEADS_DB.prepare(
+    "CREATE INDEX IF NOT EXISTS idx_installation_slots_start ON installation_slots(start_at)"
+  ).run();
+}
+
+async function getOpenInstallationSlots(env){
+  await ensureSchedulingSchema(env);
+  const now=new Date().toISOString();
+  const {results=[]}=await env.LEADS_DB.prepare(
+    "SELECT id, start_at FROM installation_slots WHERE booked_lead_id IS NULL AND start_at > ? ORDER BY start_at ASC LIMIT 60"
+  ).bind(now).all();
+  return results;
+}
+
 async function logLeadEvent(env, leadId, eventType, detail = {}) {
   if (!env.LEADS_DB || !leadId) return;
   await env.LEADS_DB.prepare(
@@ -298,6 +324,50 @@ async function handleAdminApi(request,env,url){
   if(!env.LEADS_DB) return jsonResponse({error:"Lead database unavailable"},503);
   const parts=url.pathname.split("/").filter(Boolean);
 
+  if(parts.length===3 && parts[0]==="api" && parts[1]==="admin" && parts[2]==="slots"){
+    await ensureSchedulingSchema(env);
+    if(request.method==="GET"){
+      const {results=[]}=await env.LEADS_DB.prepare(
+        `SELECT s.id, s.start_at, s.booked_lead_id, s.created_at, s.booked_at,
+                l.lead_code, l.name
+         FROM installation_slots s
+         LEFT JOIN leads l ON l.id=s.booked_lead_id
+         WHERE s.start_at > datetime('now','-1 day')
+         ORDER BY s.start_at ASC LIMIT 200`
+      ).all();
+      return jsonResponse({slots:results});
+    }
+    if(request.method==="POST"){
+      const body=await request.json().catch(()=>({}));
+      const startAt=String(body.start_at||"").trim();
+      const d=new Date(startAt);
+      if(!startAt||Number.isNaN(d.getTime())) return jsonResponse({error:"Valid start time is required"},400);
+      if(d.getTime()<=Date.now()) return jsonResponse({error:"Installation time must be in the future"},400);
+      try{
+        const result=await env.LEADS_DB.prepare(
+          "INSERT INTO installation_slots (start_at) VALUES (?)"
+        ).bind(d.toISOString()).run();
+        return jsonResponse({ok:true,id:Number(result.meta?.last_row_id||0)},201);
+      }catch(error){
+        if(String(error?.message||error).toLowerCase().includes("unique")) return jsonResponse({error:"That installation time already exists"},409);
+        throw error;
+      }
+    }
+    return jsonResponse({error:"Method not allowed"},405);
+  }
+
+  if(parts.length===4 && parts[0]==="api" && parts[1]==="admin" && parts[2]==="slots"){
+    await ensureSchedulingSchema(env);
+    const slotId=Number(parts[3]);
+    if(!Number.isInteger(slotId)||slotId<1) return jsonResponse({error:"Invalid slot id"},400);
+    if(request.method!=="DELETE") return jsonResponse({error:"Method not allowed"},405);
+    const slot=await env.LEADS_DB.prepare("SELECT id, booked_lead_id FROM installation_slots WHERE id=?").bind(slotId).first();
+    if(!slot) return jsonResponse({error:"Slot not found"},404);
+    if(slot.booked_lead_id) return jsonResponse({error:"Booked slots cannot be deleted"},409);
+    await env.LEADS_DB.prepare("DELETE FROM installation_slots WHERE id=?").bind(slotId).run();
+    return jsonResponse({ok:true});
+  }
+
   if(parts.length===3 && parts[0]==="api" && parts[1]==="admin" && parts[2]==="leads"){
     if(request.method!=="GET") return jsonResponse({error:"Method not allowed"},405);
     const {results=[]}=await env.LEADS_DB.prepare(
@@ -482,7 +552,7 @@ async function getEstimateResponseByToken(env,token){
   const tokenHash=await sha256Hex(token);
   return env.LEADS_DB.prepare(
     `SELECT er.lead_id, er.amount_cents, er.response_status, er.created_at, er.responded_at,
-            l.lead_code, l.name, l.email, l.phone, l.service, l.status
+            l.lead_code, l.name, l.email, l.phone, l.service, l.status, l.scheduled_for
      FROM estimate_responses er
      JOIN leads l ON l.id=er.lead_id
      WHERE er.token_hash=?`
@@ -521,6 +591,29 @@ async function sendAcceptanceConfirmation(env,lead){
   });
 }
 
+async function sendSchedulingConfirmation(env,lead,startAt){
+  if(!env.EMAIL) return;
+  const when=new Intl.DateTimeFormat("en-US",{timeZone:"America/Phoenix",weekday:"long",month:"long",day:"numeric",year:"numeric",hour:"numeric",minute:"2-digit"}).format(new Date(startAt));
+  const customerSubject=`Installation scheduled — ${lead.service}`;
+  await sendCustomerMessage(env,{
+    to:lead.email,
+    subject:customerSubject,
+    text:[`Hi ${lead.name},`,"",`Your AZHomeInstalls installation is scheduled for ${when} Arizona time.`,"",`Reference: ${lead.lead_code}`,`Service: ${lead.service}`,"","If you need to make a change, reply to this email.","","AZHomeInstalls"].join("\n"),
+    html:`<p>Hi ${esc(lead.name)},</p><p>Your AZHomeInstalls installation is scheduled for <strong>${esc(when)} Arizona time</strong>.</p><p><strong>Reference:</strong> ${esc(lead.lead_code)}<br><strong>Service:</strong> ${esc(lead.service)}</p><p>If you need to make a change, reply to this email.</p><p>AZHomeInstalls</p>`,
+    replyTo:env.FROM_EMAIL
+  });
+  const destination=String(env.DESTINATION_EMAIL||"").trim();
+  if(isValidEmail(destination)){
+    await sendCustomerMessage(env,{
+      to:destination,
+      subject:`Installation scheduled — ${lead.lead_code}`,
+      text:[`${lead.name} selected an installation time.`,"",`Reference: ${lead.lead_code}`,`Service: ${lead.service}`,`Scheduled: ${when} Arizona time`,`Phone: ${lead.phone||""}`,`Email: ${lead.email}`].join("\n"),
+      html:`<p><strong>${esc(lead.name)}</strong> selected an installation time.</p><p><strong>Reference:</strong> ${esc(lead.lead_code)}<br><strong>Service:</strong> ${esc(lead.service)}<br><strong>Scheduled:</strong> ${esc(when)} Arizona time<br><strong>Phone:</strong> ${esc(lead.phone||"")}<br><strong>Email:</strong> ${esc(lead.email)}</p>`,
+      replyTo:lead.email
+    });
+  }
+}
+
 async function handleEstimateResponseApi(request,env,url){
   if(!env.LEADS_DB) return jsonResponse({error:"Lead database unavailable"},503);
   const token=String(url.searchParams.get("token")||"").trim();
@@ -536,6 +629,8 @@ async function handleEstimateResponseApi(request,env,url){
       amount_cents:Number(record.amount_cents||0),
       response_status:record.response_status,
       lead_status:record.status,
+      scheduled_for:record.scheduled_for||null,
+      available_slots:record.response_status==="accepted"&&record.status==="accepted"?await getOpenInstallationSlots(env):[],
       responded_at:record.responded_at
     });
   }
@@ -543,10 +638,33 @@ async function handleEstimateResponseApi(request,env,url){
   if(request.method!=="POST") return jsonResponse({error:"Method not allowed"},405);
   const body=await request.json().catch(()=>({}));
   const action=String(body.action||"");
-  if(!["accept","decline"].includes(action)) return jsonResponse({error:"Invalid response"},400);
+  if(!["accept","decline","schedule"].includes(action)) return jsonResponse({error:"Invalid response"},400);
+
+  if(action==="schedule"){
+    if(record.response_status!=="accepted"||record.status!=="accepted") return jsonResponse({error:"Estimate must be accepted before scheduling"},409);
+    await ensureSchedulingSchema(env);
+    const slotId=Number(body.slot_id);
+    if(!Number.isInteger(slotId)||slotId<1) return jsonResponse({error:"Valid installation time is required"},400);
+    const slot=await env.LEADS_DB.prepare("SELECT id, start_at, booked_lead_id FROM installation_slots WHERE id=?").bind(slotId).first();
+    if(!slot) return jsonResponse({error:"Installation time is no longer available"},404);
+    if(slot.booked_lead_id) return jsonResponse({error:"Installation time was just booked. Please choose another."},409);
+    if(new Date(slot.start_at).getTime()<=Date.now()) return jsonResponse({error:"Installation time is no longer available"},409);
+    const now=new Date().toISOString();
+    const results=await env.LEADS_DB.batch([
+      env.LEADS_DB.prepare("UPDATE installation_slots SET booked_lead_id=?, booked_at=? WHERE id=? AND booked_lead_id IS NULL").bind(record.lead_id,now,slotId),
+      env.LEADS_DB.prepare("UPDATE leads SET status='scheduled', scheduled_for=?, next_followup_at=NULL, last_contact_at=?, updated_at=? WHERE id=? AND status='accepted'").bind(slot.start_at,now,now,record.lead_id)
+    ]);
+    const slotChanges=Number(results?.[0]?.meta?.changes||0);
+    const leadChanges=Number(results?.[1]?.meta?.changes||0);
+    if(slotChanges!==1||leadChanges!==1) return jsonResponse({error:"Installation time could not be reserved. Please refresh and choose another."},409);
+    await logLeadEvent(env,record.lead_id,"installation_scheduled",{slot_id:slotId,scheduled_for:slot.start_at,source:"customer"});
+    const refreshed=await getEstimateResponseByToken(env,token);
+    try{await sendSchedulingConfirmation(env,refreshed,slot.start_at)}catch(e){console.error("Scheduling confirmation failed",e?.message||String(e))}
+    return jsonResponse({ok:true,response_status:"accepted",lead_status:"scheduled",scheduled_for:slot.start_at});
+  }
 
   if(record.response_status!=="pending"){
-    return jsonResponse({ok:true,already_responded:true,response_status:record.response_status});
+    return jsonResponse({ok:true,already_responded:true,response_status:record.response_status,lead_status:record.status,scheduled_for:record.scheduled_for||null,available_slots:record.response_status==="accepted"&&record.status==="accepted"?await getOpenInstallationSlots(env):[]});
   }
 
   const now=new Date().toISOString();
@@ -573,7 +691,7 @@ async function handleEstimateResponseApi(request,env,url){
   if(action==="accept"){
     try{await sendAcceptanceConfirmation(env,refreshed)}catch(e){console.error("Estimate acceptance confirmation failed",e?.message||String(e))}
   }
-  return jsonResponse({ok:true,response_status:action==="accept"?"accepted":"declined"});
+  return jsonResponse({ok:true,response_status:action==="accept"?"accepted":"declined",lead_status:action==="accept"?"accepted":"lost",available_slots:action==="accept"?await getOpenInstallationSlots(env):[]});
 }
 
 export default {
