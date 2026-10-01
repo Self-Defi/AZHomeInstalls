@@ -1,0 +1,83 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <base href="/">
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <meta name="theme-color" content="#111111">
+  <title>Lead Management | AZHomeInstalls</title>
+  <link rel="icon" href="assets/icon.svg" type="image/svg+xml">
+  <link rel="stylesheet" href="css/style.css">
+  <style>
+    body{background:#f7f5ef}
+    .admin-shell{padding:28px 0 70px}
+    .admin-top{display:flex;align-items:center;justify-content:space-between;gap:16px;margin-bottom:22px}
+    .admin-title h1{font-size:clamp(2.2rem,5vw,4.4rem);margin:.35rem 0 .5rem}
+    .admin-title p{margin:0;color:#666}
+    .admin-grid{display:grid;grid-template-columns:repeat(4,1fr);gap:14px;margin:22px 0}
+    .metric{background:#fff;border:1px solid var(--line);border-radius:18px;padding:18px}
+    .metric b{display:block;font-size:1.8rem;margin-top:6px}
+    .toolbar{display:flex;gap:10px;flex-wrap:wrap;margin:18px 0}
+    .toolbar input,.toolbar select{margin:0;min-height:48px;background:#fff}
+    .toolbar input{flex:1;min-width:220px}.toolbar select{width:auto}
+    .lead-table-wrap{overflow:auto;background:#fff;border:1px solid var(--line);border-radius:20px}
+    .lead-table{width:100%;border-collapse:collapse;min-width:920px}
+    .lead-table th,.lead-table td{padding:15px 16px;border-bottom:1px solid var(--line);text-align:left;vertical-align:middle}
+    .lead-table th{font-size:.78rem;text-transform:uppercase;letter-spacing:.08em;color:#777;background:#fbfaf7}
+    .lead-table tr[data-id]{cursor:pointer}.lead-table tr[data-id]:hover{background:#fffaf0}
+    .status{display:inline-flex;padding:6px 9px;border-radius:999px;background:#efede6;font-size:.78rem;font-weight:850}
+    .status.new{background:#fff2c7}.status.contacted{background:#eaf2ff}.status.estimate_sent{background:#eee7ff}.status.scheduled{background:#def6e7}.status.completed{background:#d9f3e2}.status.lost,.status.do_not_contact{background:#f2e3e3}
+    .notice{background:#111;color:#fff;border-radius:18px;padding:18px;margin:18px 0}.notice strong{color:var(--gold2)}
+    .muted{color:#777}.empty{padding:42px;text-align:center;color:#777}
+    dialog{width:min(760px,calc(100% - 24px));border:0;border-radius:22px;padding:0;box-shadow:0 30px 90px rgba(0,0,0,.25)}
+    dialog::backdrop{background:rgba(0,0,0,.45)}
+    .modal-head,.modal-body{padding:22px}.modal-head{display:flex;justify-content:space-between;align-items:center;border-bottom:1px solid var(--line)}
+    .modal-head h2{font-size:1.7rem;margin:0}.modal-close{border:0;background:#eee;border-radius:12px;width:42px;height:42px;font-size:1.35rem}
+    .detail-grid{display:grid;grid-template-columns:1fr 1fr;gap:14px}.detail{border:1px solid var(--line);border-radius:14px;padding:14px}.detail small{display:block;color:#777}.detail strong{display:block;margin-top:4px}
+    .timeline{margin-top:20px}.event{border-left:3px solid var(--gold);padding:4px 0 16px 14px;margin-left:5px}.event small{color:#777}
+    @media(max-width:780px){.admin-grid{grid-template-columns:1fr 1fr}.admin-top{align-items:flex-start}.detail-grid{grid-template-columns:1fr}.lead-table-wrap{border-radius:14px}}
+  </style>
+</head>
+<body>
+<header class="site-header">
+  <div class="container nav">
+    <a class="brand" href=""><img src="assets/icon.svg" alt=""><span>AZHome<span class="gold">Installs</span><small class="brand-sub">Lead Management</small></span></a>
+    <a class="btn btn-dark" href="">Public Site</a>
+  </div>
+</header>
+
+<main class="admin-shell">
+  <div class="container">
+    <div class="admin-top">
+      <div class="admin-title"><div class="eyebrow">Internal CRM</div><h1>Lead management</h1><p>Website leads, follow-ups, and pipeline status.</p></div>
+    </div>
+
+    <div class="notice" id="notice"><strong>Setup in progress:</strong> this dashboard will connect to the protected Cloudflare lead API after access control is enabled.</div>
+
+    <section id="crm">
+      <div class="admin-grid">
+        <div class="metric"><span class="muted">New</span><b id="mNew">—</b></div>
+        <div class="metric"><span class="muted">Open</span><b id="mOpen">—</b></div>
+        <div class="metric"><span class="muted">Scheduled</span><b id="mScheduled">—</b></div>
+        <div class="metric"><span class="muted">Completed</span><b id="mCompleted">—</b></div>
+      </div>
+
+      <div class="toolbar">
+        <input id="search" type="search" placeholder="Search name, lead ID, email, service…" disabled>
+        <select id="statusFilter" disabled>
+          <option>All statuses</option>
+        </select>
+        <button class="btn btn-outline" type="button" disabled>Refresh</button>
+      </div>
+
+      <div class="lead-table-wrap">
+        <table class="lead-table">
+          <thead><tr><th>Lead</th><th>Customer</th><th>Service</th><th>Status</th><th>Submitted (AZ)</th><th>Next follow-up (AZ)</th></tr></thead>
+          <tbody><tr><td colspan="6" class="empty">Protected CRM connection pending.</td></tr></tbody>
+        </table>
+      </div>
+    </section>
+  </div>
+</main>
+</body>
+</html>
