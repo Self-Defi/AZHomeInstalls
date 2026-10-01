@@ -11,7 +11,7 @@
   <style>
     body{background:#f7f5ef}.response-shell{min-height:70vh;display:grid;place-items:center;padding:40px 16px}.response-card{width:min(640px,100%);background:#fff;border:1px solid var(--line);border-radius:24px;padding:28px;box-shadow:0 18px 50px rgba(0,0,0,.08)}
     .response-card h1{margin:.25rem 0 1rem;font-size:clamp(2rem,7vw,3.6rem)}.summary{display:grid;gap:12px;margin:20px 0}.summary div{background:#faf8f2;border-radius:14px;padding:14px}.summary small{display:block;color:#777}.summary strong{display:block;margin-top:4px;font-size:1.1rem}
-    .response-actions{display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-top:24px}.btn-decline{background:#fff;border:1px solid var(--line);color:#111}.status-box{border-radius:16px;padding:16px;margin-top:18px;background:#f3f3f3}.status-box.ok{background:#e4f5e9}.status-box.no{background:#f7e7e7}
+    .response-actions{display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-top:24px}.btn-decline{background:#fff;border:1px solid var(--line);color:#111}.status-box{border-radius:16px;padding:16px;margin-top:18px;background:#f3f3f3}.status-box.ok{background:#e4f5e9}.status-box.no{background:#f7e7e7}.schedule-box{margin-top:22px;border-top:1px solid var(--line);padding-top:20px}.schedule-box h2{font-size:1.35rem;margin:0 0 8px}.slot-grid{display:grid;gap:10px;margin-top:14px}.slot-btn{width:100%;text-align:left;background:#fff;border:1px solid var(--line);border-radius:14px;padding:14px 16px;font-weight:800}.slot-btn:hover{border-color:#c89b10}.slot-btn small{display:block;color:#777;font-weight:600;margin-top:3px}
     @media(max-width:620px){.response-card{padding:22px}.response-actions{grid-template-columns:1fr}}
   </style>
 </head>
@@ -32,6 +32,11 @@
       <button class="btn btn-decline" id="declineBtn" type="button">Decline Estimate</button>
     </div>
     <div class="status-box" id="statusBox" hidden></div>
+    <div class="schedule-box" id="scheduleBox" hidden>
+      <h2>Choose your installation time</h2>
+      <p class="muted">Select one of the available Arizona appointment times below.</p>
+      <div class="slot-grid" id="slotGrid"></div>
+    </div>
     <p style="margin-top:20px">Have a question? Reply to your estimate email or email <a href="mailto:info@azhomeinstalls.com">info@azhomeinstalls.com</a>.</p>
   </section>
 </main>
@@ -40,7 +45,19 @@ const token=new URLSearchParams(location.search).get("token");
 const api="/api/estimate-response";
 const money=c=>new Intl.NumberFormat("en-US",{style:"currency",currency:"USD"}).format(Number(c||0)/100);
 const esc=v=>String(v??"").replace(/[&<>"']/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#039;"}[c]));
-const title=document.getElementById("title"),intro=document.getElementById("intro"),summary=document.getElementById("summary"),actions=document.getElementById("actions"),statusBox=document.getElementById("statusBox");
+const title=document.getElementById("title"),intro=document.getElementById("intro"),summary=document.getElementById("summary"),actions=document.getElementById("actions"),statusBox=document.getElementById("statusBox"),scheduleBox=document.getElementById("scheduleBox"),slotGrid=document.getElementById("slotGrid");
+const AZ_TZ="America/Phoenix";
+const fmtAZ=v=>new Intl.DateTimeFormat("en-US",{timeZone:AZ_TZ,weekday:"long",month:"short",day:"numeric",year:"numeric",hour:"numeric",minute:"2-digit"}).format(new Date(v));
+function renderSlots(slots=[]){
+  if(!slots.length){
+    scheduleBox.hidden=false;
+    slotGrid.innerHTML='<div class="status-box">No appointment times are available online right now. We’ll contact you to coordinate scheduling.</div>';
+    return;
+  }
+  scheduleBox.hidden=false;
+  slotGrid.innerHTML=slots.map(s=>'<button class="slot-btn" type="button" data-slot-id="'+s.id+'">'+esc(fmtAZ(s.start_at))+'<small>Arizona time</small></button>').join("");
+  slotGrid.querySelectorAll(".slot-btn").forEach(b=>b.addEventListener("click",()=>schedule(Number(b.dataset.slotId),b)));
+}
 async function load(){
   if(!token){showError("This estimate link is missing its response token.");return}
   try{
@@ -50,13 +67,31 @@ async function load(){
     intro.textContent="Confirm whether you’d like AZHomeInstalls to move forward with this project.";
     summary.hidden=false;
     summary.innerHTML='<div><small>Reference</small><strong>'+esc(d.lead_code)+'</strong></div><div><small>Service</small><strong>'+esc(d.service)+'</strong></div><div><small>Estimate</small><strong>'+money(d.amount_cents)+'</strong></div>';
-    if(d.response_status==="pending"){actions.hidden=false}else{showResult(d.response_status)}
+    if(d.lead_status==="scheduled"&&d.scheduled_for){
+      showScheduled(d.scheduled_for);
+    }else if(d.response_status==="pending"){
+      actions.hidden=false;
+    }else{
+      showResult(d.response_status,d.available_slots||[]);
+    }
   }catch(e){showError(e.message)}
 }
-function showResult(status){
+function showResult(status,slots=[]){
   actions.hidden=true;statusBox.hidden=false;
-  if(status==="accepted"){statusBox.className="status-box ok";statusBox.innerHTML="<strong>Estimate accepted.</strong><br>We’ll contact you to coordinate scheduling."}
-  else{statusBox.className="status-box no";statusBox.innerHTML="<strong>Estimate declined.</strong><br>No further estimate follow-up will be sent."}
+  if(status==="accepted"){
+    statusBox.className="status-box ok";
+    statusBox.innerHTML="<strong>Estimate accepted.</strong><br>Choose an installation time below.";
+    renderSlots(slots);
+  }else{
+    scheduleBox.hidden=true;
+    statusBox.className="status-box no";
+    statusBox.innerHTML="<strong>Estimate declined.</strong><br>No further estimate follow-up will be sent.";
+  }
+}
+function showScheduled(when){
+  actions.hidden=true;scheduleBox.hidden=true;statusBox.hidden=false;
+  statusBox.className="status-box ok";
+  statusBox.innerHTML="<strong>Installation scheduled.</strong><br>"+esc(fmtAZ(when))+" Arizona time.";
 }
 function showError(msg){title.textContent="We couldn’t load this estimate.";intro.textContent=msg;actions.hidden=true}
 async function respond(action){
@@ -66,8 +101,22 @@ async function respond(action){
   try{
     const r=await fetch(api+"?token="+encodeURIComponent(token),{method:"POST",headers:{"Content-Type":"application/json","Accept":"application/json"},body:JSON.stringify({action})});
     const d=await r.json();if(!r.ok)throw new Error(d.error||("HTTP "+r.status));
-    showResult(d.response_status);
+    if(d.lead_status==="scheduled"&&d.scheduled_for) showScheduled(d.scheduled_for);
+    else showResult(d.response_status,d.available_slots||[]);
   }catch(e){alert("Response failed: "+e.message);document.getElementById("acceptBtn").disabled=false;document.getElementById("declineBtn").disabled=false}
+}
+async function schedule(slotId,button){
+  if(!confirm("Schedule this installation for "+button.firstChild.textContent+"?"))return;
+  const buttons=[...slotGrid.querySelectorAll(".slot-btn")];buttons.forEach(b=>b.disabled=true);
+  try{
+    const r=await fetch(api+"?token="+encodeURIComponent(token),{method:"POST",headers:{"Content-Type":"application/json","Accept":"application/json"},body:JSON.stringify({action:"schedule",slot_id:slotId})});
+    const d=await r.json();if(!r.ok)throw new Error(d.error||("HTTP "+r.status));
+    showScheduled(d.scheduled_for);
+  }catch(err){
+    alert("Scheduling failed: "+err.message);
+    buttons.forEach(b=>b.disabled=false);
+    await load();
+  }
 }
 document.getElementById("acceptBtn").addEventListener("click",()=>respond("accept"));
 document.getElementById("declineBtn").addEventListener("click",()=>respond("decline"));
