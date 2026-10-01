@@ -13,6 +13,7 @@
     .admin-title h1{font-size:clamp(2.2rem,5vw,4.4rem);margin:.35rem 0 .5rem}.admin-title p{margin:0;color:#666}
     .admin-grid{display:grid;grid-template-columns:repeat(4,1fr);gap:14px;margin:22px 0}.metric{background:#fff;border:1px solid var(--line);border-radius:18px;padding:18px}.metric b{display:block;font-size:1.8rem;margin-top:6px}
     .value-grid{display:grid;grid-template-columns:repeat(3,1fr);gap:14px;margin:0 0 22px}.value-card{background:#111;color:#fff;border-radius:18px;padding:17px}.value-card small{color:#bbb}.value-card b{display:block;font-size:1.5rem;margin-top:6px}.value-card.gold b{color:var(--gold2)}
+    .attention-panel{background:#fff;border:1px solid var(--line);border-radius:18px;padding:16px 18px;margin:0 0 22px}.attention-head{display:flex;align-items:center;justify-content:space-between;gap:12px;margin-bottom:10px}.attention-head h3{margin:0;font-size:1.05rem}.attention-count{background:#fff2c7;border-radius:999px;padding:5px 9px;font-weight:850;font-size:.8rem}.attention-list{display:grid;gap:8px}.attention-item{display:flex;align-items:center;justify-content:space-between;gap:12px;padding:10px 0;border-top:1px solid var(--line)}.attention-item:first-child{border-top:0}.attention-item button{white-space:nowrap}.attention-copy strong{display:block}.attention-copy small{color:#777}.attention-none{color:#777}
     .toolbar{display:flex;gap:10px;flex-wrap:wrap;margin:18px 0}.toolbar input,.toolbar select{margin:0;min-height:48px;background:#fff}.toolbar input{flex:1;min-width:220px}.toolbar select{width:auto}
     .lead-table-wrap{overflow:auto;background:#fff;border:1px solid var(--line);border-radius:20px}.lead-table{width:100%;border-collapse:collapse;min-width:980px}
     .lead-table th,.lead-table td{padding:15px 16px;border-bottom:1px solid var(--line);text-align:left;vertical-align:middle}.lead-table th{font-size:.78rem;text-transform:uppercase;letter-spacing:.08em;color:#777;background:#fbfaf7}
@@ -20,7 +21,8 @@
     .status.new{background:#fff2c7}.status.contacted{background:#eaf2ff}.status.estimate_sent{background:#eee7ff}.status.scheduled{background:#def6e7}.status.completed{background:#d9f3e2}.status.lost,.status.do_not_contact{background:#f2e3e3}
     .notice{background:#111;color:#fff;border-radius:18px;padding:18px;margin:18px 0}.notice strong{color:var(--gold2)}.notice.ok{background:#173b27}.notice.error{background:#5a2020}
     .muted{color:#777}.empty{padding:42px;text-align:center;color:#777}.money{font-variant-numeric:tabular-nums}.age{font-weight:850}.age.warn{color:#a46300}.age.overdue{color:#a02a2a}
-    .mobile-cards{display:none}.lead-card{background:#fff;border:1px solid var(--line);border-radius:18px;padding:16px;margin-bottom:12px;cursor:pointer}.lead-card-top{display:flex;justify-content:space-between;gap:12px;align-items:flex-start}.lead-card h3{margin:0;font-size:1.05rem}.lead-card .code{color:#777;font-size:.8rem;font-weight:800}.lead-card-grid{display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-top:14px}.lead-card-grid div{background:#faf9f5;border-radius:12px;padding:10px}.lead-card-grid small{display:block;color:#777}.lead-card-grid strong{display:block;margin-top:3px}.quick-links{display:flex;gap:8px;margin-top:12px}.quick-links a{flex:1;text-align:center;text-decoration:none;padding:10px;border-radius:10px;border:1px solid var(--line);font-weight:850;color:#111;background:#fff}
+    .mobile-cards{display:none}.lead-card{background:#fff;border:1px solid var(--line);border-radius:18px;padding:16px;margin-bottom:12px;cursor:pointer}.lead-card-top{display:flex;justify-content:space-between;gap:12px;align-items:flex-start}.lead-card h3{margin:0;font-size:1.05rem}.lead-card .code{color:#777;font-size:.8rem;font-weight:800}.lead-card-grid{display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-top:14px}.lead-card-grid div{background:#faf9f5;border-radius:12px;padding:10px}.lead-card-grid small{display:block;color:#777}.lead-card-grid strong{display:block;margin-top:3px}.quick-links{display:flex;gap:8px;margin-top:12px}.quick-links a,.quick-links button{flex:1;text-align:center;text-decoration:none;padding:10px;border-radius:10px;border:1px solid var(--line);font-weight:850;color:#111;background:#fff}.quick-links button{cursor:pointer}
+    
     dialog{width:min(860px,calc(100% - 24px));border:0;border-radius:22px;padding:0;box-shadow:0 30px 90px rgba(0,0,0,.25)}dialog::backdrop{background:rgba(0,0,0,.45)}
     .modal-head,.modal-body{padding:22px}.modal-head{display:flex;justify-content:space-between;align-items:center;border-bottom:1px solid var(--line)}.modal-head h2{font-size:1.7rem;margin:0}.modal-close{border:0;background:#eee;border-radius:12px;width:42px;height:42px;font-size:1.35rem}
     .detail-grid{display:grid;grid-template-columns:1fr 1fr;gap:14px}.detail{border:1px solid var(--line);border-radius:14px;padding:14px}.detail small{display:block;color:#777}.detail strong{display:block;margin-top:4px;word-break:break-word}
@@ -59,6 +61,10 @@
         <div class="value-card gold"><small>Open pipeline</small><b id="vOpen">—</b></div>
         <div class="value-card"><small>Scheduled value</small><b id="vScheduled">—</b></div>
         <div class="value-card"><small>Completed value</small><b id="vCompleted">—</b></div>
+      </div>
+      <div class="attention-panel">
+        <div class="attention-head"><h3>Needs attention</h3><span class="attention-count" id="attentionCount">0</span></div>
+        <div class="attention-list" id="attentionList"><div class="attention-none">No overdue follow-ups.</div></div>
       </div>
       <div class="toolbar">
         <input id="search" type="search" placeholder="Search name, lead ID, email, service…">
@@ -131,7 +137,30 @@ function filteredLeads(){
   const q=document.getElementById("search").value.trim().toLowerCase(),f=document.getElementById("statusFilter").value;
   return leads.filter(l=>(!f||l.status===f)&&(!q||[l.lead_code,l.name,l.email,l.phone,l.service].some(v=>String(v||"").toLowerCase().includes(q))));
 }
+function computeMetrics(items){
+  const m={new:0,open:0,scheduled:0,completed:0,open_value_cents:0,scheduled_value_cents:0,completed_value_cents:0};
+  for(const l of items){
+    const value=Number(l.estimate_amount_cents||0);
+    if(l.status==="new")m.new++;
+    if(["new","contacted","estimate_sent"].includes(l.status)){m.open++;m.open_value_cents+=value}
+    if(l.status==="scheduled"){m.scheduled++;m.scheduled_value_cents+=value}
+    if(l.status==="completed"){m.completed++;m.completed_value_cents+=value}
+  }
+  return m;
+}
+function attentionLeads(items){
+  const now=Date.now();
+  return items.filter(l=>["new","contacted","estimate_sent"].includes(l.status)&&l.next_followup_at&&new Date(l.next_followup_at).getTime()<=now).sort((a,b)=>new Date(a.next_followup_at)-new Date(b.next_followup_at));
+}
+function renderAttention(){
+  const due=attentionLeads(leads),list=document.getElementById("attentionList");
+  document.getElementById("attentionCount").textContent=due.length;
+  if(!due.length){list.innerHTML='<div class="attention-none">No overdue follow-ups.</div>';return}
+  list.innerHTML=due.slice(0,5).map(l=>'<div class="attention-item"><div class="attention-copy"><strong>'+escHtml(l.name)+' · '+escHtml(l.service)+'</strong><small>'+escHtml(l.lead_code)+' · due '+fmtAZ(l.next_followup_at)+'</small></div><button type="button" class="btn btn-outline attention-open" data-open-id="'+l.id+'">Open</button></div>').join("");
+  document.querySelectorAll(".attention-open").forEach(b=>b.addEventListener("click",()=>openLead(Number(b.dataset.openId))));
+}
 function render(){
+  renderAttention();
   const filtered=filteredLeads();
   const rows=document.getElementById("leadRows"),cards=document.getElementById("mobileCards");
   if(!filtered.length){rows.innerHTML='<tr><td colspan="8" class="empty">No leads match this view.</td></tr>';cards.innerHTML='<div class="empty">No leads match this view.</div>';return}
@@ -144,8 +173,9 @@ async function loadLeads(){
   try{
     const r=await fetch(API,{credentials:"same-origin",headers:{"Accept":"application/json"}});if(!r.ok)throw new Error("HTTP "+r.status);
     const data=await r.json();leads=data.leads||[];
-    document.getElementById("mNew").textContent=data.metrics?.new??0;document.getElementById("mOpen").textContent=data.metrics?.open??0;document.getElementById("mScheduled").textContent=data.metrics?.scheduled??0;document.getElementById("mCompleted").textContent=data.metrics?.completed??0;
-    document.getElementById("vOpen").textContent=money(data.metrics?.open_value_cents??0);document.getElementById("vScheduled").textContent=money(data.metrics?.scheduled_value_cents??0);document.getElementById("vCompleted").textContent=money(data.metrics?.completed_value_cents??0);
+    const m=computeMetrics(leads);
+    document.getElementById("mNew").textContent=m.new;document.getElementById("mOpen").textContent=m.open;document.getElementById("mScheduled").textContent=m.scheduled;document.getElementById("mCompleted").textContent=m.completed;
+    document.getElementById("vOpen").textContent=money(m.open_value_cents);document.getElementById("vScheduled").textContent=money(m.scheduled_value_cents);document.getElementById("vCompleted").textContent=money(m.completed_value_cents);
     setNotice("<strong>Live:</strong> protected D1 lead data is connected.","ok");render();
   }catch(e){setNotice("<strong>Connection error:</strong> "+escHtml(e.message)+". Refresh after the Worker deployment finishes.","error");document.getElementById("leadRows").innerHTML='<tr><td colspan="8" class="empty">Unable to load protected CRM data.</td></tr>';document.getElementById("mobileCards").innerHTML='<div class="empty">Unable to load CRM data.</div>'}
 }
