@@ -13,7 +13,7 @@
     .admin-title h1{font-size:clamp(2.2rem,5vw,4.4rem);margin:.35rem 0 .5rem}.admin-title p{margin:0;color:#666}
     .admin-grid{display:grid;grid-template-columns:repeat(5,1fr);gap:14px;margin:22px 0}.metric{background:#fff;border:1px solid var(--line);border-radius:18px;padding:18px}.metric b{display:block;font-size:1.8rem;margin-top:6px}
     .value-grid{display:grid;grid-template-columns:repeat(3,1fr);gap:14px;margin:0 0 22px}.value-card{background:#111;color:#fff;border-radius:18px;padding:17px}.value-card small{color:#bbb}.value-card b{display:block;font-size:1.5rem;margin-top:6px}.value-card.gold b{color:var(--gold2)}
-    .attention-panel{background:#fff;border:1px solid var(--line);border-radius:18px;padding:16px 18px;margin:0 0 22px}.attention-head{display:flex;align-items:center;justify-content:space-between;gap:12px;margin-bottom:10px}.attention-head h3{margin:0;font-size:1.05rem}.attention-count{background:#fff2c7;border-radius:999px;padding:5px 9px;font-weight:850;font-size:.8rem}.attention-list{display:grid;gap:8px}.attention-item{display:flex;align-items:center;justify-content:space-between;gap:12px;padding:10px 0;border-top:1px solid var(--line)}.attention-item:first-child{border-top:0}.attention-item button{white-space:nowrap}.attention-copy strong{display:block}.attention-copy small{color:#777}.attention-item.accepted{background:#f2fbf4;border:1px solid #cfe8d6;border-radius:12px;padding:12px}.attention-item.accepted .attention-copy small{color:#356046}.attention-none{color:#777}
+    .attention-panel{background:#fff;border:1px solid var(--line);border-radius:18px;padding:16px 18px;margin:0 0 22px}.schedule-admin{background:#fff;border:1px solid var(--line);border-radius:18px;padding:16px 18px;margin:0 0 22px}.schedule-admin h3{margin:0 0 6px}.slot-admin-form{display:grid;grid-template-columns:1fr auto;gap:10px;margin-top:12px}.slot-admin-list{display:grid;gap:8px;margin-top:14px}.slot-admin-row{display:flex;align-items:center;justify-content:space-between;gap:12px;border-top:1px solid var(--line);padding-top:10px}.slot-admin-row:first-child{border-top:0}.slot-admin-row small{display:block;color:#777}.slot-admin-row.booked{background:#f2fbf4;border:1px solid #cfe8d6;border-radius:12px;padding:10px}.slot-admin-empty{color:#777}.attention-head{display:flex;align-items:center;justify-content:space-between;gap:12px;margin-bottom:10px}.attention-head h3{margin:0;font-size:1.05rem}.attention-count{background:#fff2c7;border-radius:999px;padding:5px 9px;font-weight:850;font-size:.8rem}.attention-list{display:grid;gap:8px}.attention-item{display:flex;align-items:center;justify-content:space-between;gap:12px;padding:10px 0;border-top:1px solid var(--line)}.attention-item:first-child{border-top:0}.attention-item button{white-space:nowrap}.attention-copy strong{display:block}.attention-copy small{color:#777}.attention-item.accepted{background:#f2fbf4;border:1px solid #cfe8d6;border-radius:12px;padding:12px}.attention-item.accepted .attention-copy small{color:#356046}.attention-none{color:#777}
     .toolbar{display:flex;gap:10px;flex-wrap:wrap;margin:18px 0}.toolbar input,.toolbar select{margin:0;min-height:48px;background:#fff}.toolbar input{flex:1;min-width:220px}.toolbar select{width:auto}
     .lead-table-wrap{overflow:auto;background:#fff;border:1px solid var(--line);border-radius:20px}.lead-table{width:100%;border-collapse:collapse;min-width:980px}
     .lead-table th,.lead-table td{padding:15px 16px;border-bottom:1px solid var(--line);text-align:left;vertical-align:middle}.lead-table th{font-size:.78rem;text-transform:uppercase;letter-spacing:.08em;color:#777;background:#fbfaf7}
@@ -67,6 +67,15 @@
         <div class="attention-head"><h3>Needs attention</h3><span class="attention-count" id="attentionCount">0</span></div>
         <div class="attention-list" id="attentionList"><div class="attention-none">No leads currently require action.</div></div>
       </div>
+      <div class="schedule-admin">
+        <h3>Customer scheduling availability</h3>
+        <p class="muted">Add only installation times you are willing to offer customers after estimate acceptance.</p>
+        <div class="slot-admin-form">
+          <input id="newSlot" type="datetime-local" aria-label="New installation time">
+          <button class="btn btn-dark" id="addSlot" type="button">Add time</button>
+        </div>
+        <div class="slot-admin-list" id="slotAdminList"><div class="slot-admin-empty">Loading appointment times…</div></div>
+      </div>
       <div class="toolbar">
         <input id="search" type="search" placeholder="Search name, lead ID, email, service…">
         <select id="statusFilter">
@@ -119,6 +128,7 @@
 
 <script>
 const API="/api/admin/leads";
+const SLOT_API="/api/admin/slots";
 const AZ_TZ="America/Phoenix";
 let leads=[];
 let activeLead=null;
@@ -175,6 +185,36 @@ function render(){
   cards.innerHTML=filtered.map(l=>{const a=leadAge(l.created_at);return '<article class="lead-card" data-id="'+l.id+'"><div class="lead-card-top"><div><div class="code">'+escHtml(l.lead_code)+'</div><h3>'+escHtml(l.name)+'</h3></div><span class="status '+escHtml(l.status)+'">'+escHtml(statusLabel(l.status))+'</span></div><p>'+escHtml(l.service)+'</p><div class="lead-card-grid"><div><small>Estimate</small><strong>'+money(l.estimate_amount_cents)+'</strong></div><div><small>Lead age</small><strong class="age '+a.cls+'">'+a.label+'</strong></div><div><small>Next follow-up</small><strong>'+fmtAZ(l.next_followup_at)+'</strong></div><div><small>Submitted</small><strong>'+fmtAZ(l.created_at)+'</strong></div></div><div class="quick-links"><a href="'+phoneHref(l.phone)+'" onclick="event.stopPropagation()">Call</a><a href="mailto:'+encodeURIComponent(l.email)+'" onclick="event.stopPropagation()">Email</a><button type="button" onclick="event.stopPropagation();openLead('+l.id+')">Open</button></div></article>'}).join("");
   document.querySelectorAll("[data-id]").forEach(r=>r.addEventListener("click",()=>openLead(Number(r.dataset.id))));
 }
+async function loadSlots(){
+  const list=document.getElementById("slotAdminList");
+  try{
+    const r=await fetch(SLOT_API,{credentials:"same-origin",headers:{"Accept":"application/json"}});const d=await r.json();if(!r.ok)throw new Error(d.error||("HTTP "+r.status));
+    const slots=d.slots||[];
+    if(!slots.length){list.innerHTML='<div class="slot-admin-empty">No installation times posted yet.</div>';return}
+    list.innerHTML=slots.map(s=>{
+      const booked=Number(s.booked_lead_id||0)>0;
+      return '<div class="slot-admin-row '+(booked?'booked':'')+'"><div><strong>'+fmtAZ(s.start_at)+'</strong><small>'+(booked?'Booked by '+escHtml(s.lead_code||"lead")+' · '+escHtml(s.name||"customer"):'Available to customers')+'</small></div>'+(booked?'':'<button class="btn btn-outline slot-delete" type="button" data-slot-id="'+s.id+'">Remove</button>')+'</div>';
+    }).join("");
+    list.querySelectorAll(".slot-delete").forEach(b=>b.addEventListener("click",()=>deleteSlot(Number(b.dataset.slotId))));
+  }catch(err){list.innerHTML='<div class="slot-admin-empty">Unable to load appointment times: '+escHtml(err.message)+'</div>'}
+}
+async function addSlot(){
+  const input=document.getElementById("newSlot"),startAt=azInputToISO(input.value);
+  if(!startAt){alert("Choose an installation date and time.");return}
+  const b=document.getElementById("addSlot");b.disabled=true;b.textContent="Adding…";
+  try{
+    const r=await fetch(SLOT_API,{method:"POST",credentials:"same-origin",headers:{"Content-Type":"application/json","Accept":"application/json"},body:JSON.stringify({start_at:startAt})});
+    const d=await r.json();if(!r.ok)throw new Error(d.error||("HTTP "+r.status));
+    input.value="";await loadSlots();
+  }catch(err){alert("Could not add time: "+err.message)}finally{b.disabled=false;b.textContent="Add time"}
+}
+async function deleteSlot(id){
+  if(!confirm("Remove this installation time from customer availability?"))return;
+  try{
+    const r=await fetch(SLOT_API+"/"+id,{method:"DELETE",credentials:"same-origin",headers:{"Accept":"application/json"}});const d=await r.json();if(!r.ok)throw new Error(d.error||("HTTP "+r.status));await loadSlots();
+  }catch(err){alert("Could not remove time: "+err.message)}
+}
+
 async function loadLeads(){
   setNotice("<strong>Connecting:</strong> loading protected lead data…","");
   try{
@@ -232,7 +272,8 @@ async function sendEstimate(){
   if(!raw||!Number.isFinite(cents)||cents<=0){alert("Enter an estimate amount first.");return}
   if(!confirm("Send a "+money(cents)+" estimate to "+activeLead.email+"?"))return;
   const b=document.getElementById("sendEstimate");b.disabled=true;b.textContent="Sending…";
-  try{const r=await fetch(API+"/"+activeLead.id+"/estimate",{method:"POST",credentials:"same-origin",headers:{"Content-Type":"application/json","Accept":"application/json"},body:JSON.stringify({estimate_amount_cents:cents})});const d=await r.json();if(!r.ok)throw new Error(d.error||("HTTP "+r.status));document.getElementById("leadDialog").close();await loadLeads();setNotice("<strong>Estimate sent:</strong> "+money(cents)+" to "+escHtml(activeLead.email)+".","ok")}catch(e){alert("Estimate failed: "+e.message)}finally{b.disabled=false;b.textContent="Send estimate"}
+  try{const r=await fetch(API+"/"+activeLead.id+"/estimate",{method:"POST",credentials:"same-origin",headers:{"Content-Type":"application/json","Accept":"application/json"},body:JSON.stringify({estimate_amount_cents:cents})});const d=await r.json();if(!r.ok)throw new Error(d.error||("HTTP "+r.status));document.getElementById("leadDialog").close();await loadSlots();
+loadLeads();setNotice("<strong>Estimate sent:</strong> "+money(cents)+" to "+escHtml(activeLead.email)+".","ok")}catch(e){alert("Estimate failed: "+e.message)}finally{b.disabled=false;b.textContent="Send estimate"}
 }
 async function saveNote(){
   if(!activeLead)return;const note=document.getElementById("noteText").value.trim();if(!note){alert("Enter a note first.");return}
@@ -244,6 +285,7 @@ async function sendFollowup(){
   const b=document.getElementById("sendFollowup");b.disabled=true;b.textContent="Sending…";
   try{const r=await fetch(API+"/"+activeLead.id+"/followup",{method:"POST",credentials:"same-origin",headers:{"Accept":"application/json"}});const d=await r.json();if(!r.ok)throw new Error(d.error||("HTTP "+r.status));document.getElementById("leadDialog").close();await loadLeads();setNotice("<strong>Sent:</strong> follow-up email delivered to "+escHtml(activeLead.email)+".","ok")}catch(e){alert("Follow-up failed: "+e.message)}finally{b.disabled=false;b.textContent="Send follow-up now"}
 }
+document.getElementById("addSlot").addEventListener("click",addSlot);
 document.getElementById("editStatus").addEventListener("change",e=>updateNurtureControl(e.target.value));
 document.getElementById("search").addEventListener("input",render);document.getElementById("statusFilter").addEventListener("change",render);document.getElementById("refreshBtn").addEventListener("click",loadLeads);document.getElementById("closeDialog").addEventListener("click",()=>document.getElementById("leadDialog").close());document.getElementById("saveLead").addEventListener("click",saveLead);document.getElementById("sendEstimate").addEventListener("click",sendEstimate);document.getElementById("saveNote").addEventListener("click",saveNote);document.getElementById("sendFollowup").addEventListener("click",sendFollowup);
 loadLeads();
