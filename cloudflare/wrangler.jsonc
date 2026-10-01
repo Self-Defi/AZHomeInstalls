@@ -28,7 +28,10 @@
   },
   "vars": {
     "DESTINATION_EMAIL": "cbp.cep@gmail.com",
-    "FROM_EMAIL": "info@azhomeinstalls.com"
+    "FROM_EMAIL": "info@azhomeinstalls.com",
+    "GOOGLE_CALENDAR_ID": "primary",
+    "DEFAULT_JOB_MINUTES": "120",
+    "DEFAULT_BUFFER_MINUTES": "30"
   },
   "d1_databases": [
     {
