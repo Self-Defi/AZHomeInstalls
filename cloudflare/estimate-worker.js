@@ -88,7 +88,7 @@ async function sha256Hex(value){
 async function ensureEstimateResponseSchema(env){
   if(!env.LEADS_DB) return;
   await env.LEADS_DB.prepare(
-    \`CREATE TABLE IF NOT EXISTS estimate_responses (
+    `CREATE TABLE IF NOT EXISTS estimate_responses (
       lead_id INTEGER PRIMARY KEY,
       token_hash TEXT NOT NULL UNIQUE,
       amount_cents INTEGER NOT NULL,
@@ -96,7 +96,7 @@ async function ensureEstimateResponseSchema(env){
       created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
       responded_at TEXT,
       FOREIGN KEY (lead_id) REFERENCES leads(id) ON DELETE CASCADE
-    )\`
+    )`
   ).run();
   await env.LEADS_DB.prepare(
     "CREATE INDEX IF NOT EXISTS idx_estimate_responses_token_hash ON estimate_responses(token_hash)"
@@ -163,27 +163,32 @@ async function sendImmediateConfirmation(env, lead) {
 
 function estimateTemplate(lead, amountCents, responseToken) {
   const amount = new Intl.NumberFormat("en-US",{style:"currency",currency:"USD"}).format(Number(amountCents || 0) / 100);
-  const subject = \`AZHomeInstalls estimate — \${lead.service}\`;
+  const responseUrl = `https://azhomeinstalls.com/estimate-response/?token=${encodeURIComponent(responseToken)}`;
+  const subject = `AZHomeInstalls estimate — ${lead.service}`;
   const text = [
-    \`Hi \${lead.name},\`,
+    `Hi ${lead.name},`,
     "",
-    \`We prepared an estimate for your \${lead.service} project.\`,
+    `We prepared an estimate for your ${lead.service} project.`,
     "",
-    \`Estimate: \${amount}\`,
-    \`Reference: \${lead.lead_code}\`,
+    `Estimate: ${amount}`,
+    `Reference: ${lead.lead_code}`,
     "",
-    "Reply to this email if you would like to move forward or if you have any questions.",
+    "Review and respond to your estimate:",
+    responseUrl,
+    "",
+    "You can accept the estimate, decline it, or reply to this email with questions.",
     "",
     "AZHomeInstalls",
     "Residential Installation Services"
   ].join("\\n");
-  const html = \`
-    <p>Hi \${esc(lead.name)},</p>
-    <p>We prepared an estimate for your <strong>\${esc(lead.service)}</strong> project.</p>
-    <p style="font-size:20px"><strong>Estimate: \${esc(amount)}</strong></p>
-    <p><strong>Reference:</strong> \${esc(lead.lead_code)}</p>
-    <p>Reply to this email if you would like to move forward or if you have any questions.</p>
-    <p>AZHomeInstalls<br>Residential Installation Services</p>\`;
+  const html = `
+    <p>Hi ${esc(lead.name)},</p>
+    <p>We prepared an estimate for your <strong>${esc(lead.service)}</strong> project.</p>
+    <p style="font-size:20px"><strong>Estimate: ${esc(amount)}</strong></p>
+    <p><strong>Reference:</strong> ${esc(lead.lead_code)}</p>
+    <p style="margin:24px 0"><a href="${esc(responseUrl)}" style="display:inline-block;background:#111;color:#fff;text-decoration:none;padding:14px 22px;border-radius:10px;font-weight:700">Review &amp; Respond</a></p>
+    <p>You can accept the estimate, decline it, or reply to this email with questions.</p>
+    <p>AZHomeInstalls<br>Residential Installation Services</p>`;
   return { subject, text, html, amount };
 }
 
@@ -474,11 +479,11 @@ async function getEstimateResponseByToken(env,token){
   await ensureEstimateResponseSchema(env);
   const tokenHash=await sha256Hex(token);
   return env.LEADS_DB.prepare(
-    \`SELECT er.lead_id, er.amount_cents, er.response_status, er.created_at, er.responded_at,
+    `SELECT er.lead_id, er.amount_cents, er.response_status, er.created_at, er.responded_at,
             l.lead_code, l.name, l.email, l.phone, l.service, l.status
      FROM estimate_responses er
      JOIN leads l ON l.id=er.lead_id
-     WHERE er.token_hash=?\`
+     WHERE er.token_hash=?`
   ).bind(tokenHash).first();
 }
 
@@ -488,18 +493,18 @@ async function notifyEstimateResponse(env,lead,action){
   if(!isValidEmail(destination)) return;
   const accepted=action==="accept";
   const amount=new Intl.NumberFormat("en-US",{style:"currency",currency:"USD"}).format(Number(lead.amount_cents||0)/100);
-  const subject=\`Estimate \${accepted?"accepted":"declined"} — \${lead.lead_code}\`;
+  const subject=`Estimate ${accepted?"accepted":"declined"} — ${lead.lead_code}`;
   const text=[
-    \`\${lead.name} has \${accepted?"accepted":"declined"} the AZHomeInstalls estimate.\`,
+    `${lead.name} has ${accepted?"accepted":"declined"} the AZHomeInstalls estimate.`,
     "",
-    \`Reference: \${lead.lead_code}\`,
-    \`Service: \${lead.service}\`,
-    \`Estimate: \${amount}\`,
-    \`Customer: \${lead.name}\`,
-    \`Email: \${lead.email}\`,
-    \`Phone: \${lead.phone||""}\`
+    `Reference: ${lead.lead_code}`,
+    `Service: ${lead.service}`,
+    `Estimate: ${amount}`,
+    `Customer: ${lead.name}`,
+    `Email: ${lead.email}`,
+    `Phone: ${lead.phone||""}`
   ].join("\n");
-  await sendCustomerMessage(env,{to:destination,subject,text,html:\`<p><strong>\${esc(lead.name)}</strong> has \${accepted?"accepted":"declined"} the estimate.</p><p><strong>Reference:</strong> \${esc(lead.lead_code)}<br><strong>Service:</strong> \${esc(lead.service)}<br><strong>Estimate:</strong> \${esc(amount)}<br><strong>Email:</strong> \${esc(lead.email)}<br><strong>Phone:</strong> \${esc(lead.phone||"")}</p>\`,replyTo:lead.email});
+  await sendCustomerMessage(env,{to:destination,subject,text,html:`<p><strong>${esc(lead.name)}</strong> has ${accepted?"accepted":"declined"} the estimate.</p><p><strong>Reference:</strong> ${esc(lead.lead_code)}<br><strong>Service:</strong> ${esc(lead.service)}<br><strong>Estimate:</strong> ${esc(amount)}<br><strong>Email:</strong> ${esc(lead.email)}<br><strong>Phone:</strong> ${esc(lead.phone||"")}</p>`,replyTo:lead.email});
 }
 
 async function sendAcceptanceConfirmation(env,lead){
@@ -507,9 +512,9 @@ async function sendAcceptanceConfirmation(env,lead){
   const amount=new Intl.NumberFormat("en-US",{style:"currency",currency:"USD"}).format(Number(lead.amount_cents||0)/100);
   await sendCustomerMessage(env,{
     to:lead.email,
-    subject:\`Estimate accepted — \${lead.service}\`,
-    text:[\`Hi \${lead.name},\`,"",\`We received your acceptance for the \${lead.service} estimate of \${amount}.\`,"","We’ll contact you to coordinate scheduling.", "",\`Reference: \${lead.lead_code}\`,"","AZHomeInstalls"].join("\n"),
-    html:\`<p>Hi \${esc(lead.name)},</p><p>We received your acceptance for the <strong>\${esc(lead.service)}</strong> estimate of <strong>\${esc(amount)}</strong>.</p><p>We’ll contact you to coordinate scheduling.</p><p><strong>Reference:</strong> \${esc(lead.lead_code)}</p><p>AZHomeInstalls</p>\`,
+    subject:`Estimate accepted — ${lead.service}`,
+    text:[`Hi ${lead.name},`,"",`We received your acceptance for the ${lead.service} estimate of ${amount}.`,"","We’ll contact you to coordinate scheduling.", "",`Reference: ${lead.lead_code}`,"","AZHomeInstalls"].join("\n"),
+    html:`<p>Hi ${esc(lead.name)},</p><p>We received your acceptance for the <strong>${esc(lead.service)}</strong> estimate of <strong>${esc(amount)}</strong>.</p><p>We’ll contact you to coordinate scheduling.</p><p><strong>Reference:</strong> ${esc(lead.lead_code)}</p><p>AZHomeInstalls</p>`,
     replyTo:env.FROM_EMAIL
   });
 }
