@@ -304,11 +304,12 @@ async function handleAdminApi(request,env,url){
       "SELECT id, lead_code, name, phone, email, zip, service, status, followup_stage, next_followup_at, last_contact_at, estimate_amount_cents, scheduled_for, completed_at, unsubscribed, created_at, updated_at FROM leads ORDER BY datetime(created_at) DESC, id DESC LIMIT 500"
     ).all();
 
-    const metrics={new:0,open:0,scheduled:0,completed:0,open_value_cents:0,scheduled_value_cents:0,completed_value_cents:0};
+    const metrics={new:0,open:0,accepted:0,scheduled:0,completed:0,open_value_cents:0,scheduled_value_cents:0,completed_value_cents:0};
     for(const lead of results){
       const value=Number(lead.estimate_amount_cents||0);
       if(lead.status==="new") metrics.new++;
       if(["new","contacted","estimate_sent","accepted"].includes(lead.status)){ metrics.open++; metrics.open_value_cents+=value; }
+      if(lead.status==="accepted") metrics.accepted++;
       if(lead.status==="scheduled"){ metrics.scheduled++; metrics.scheduled_value_cents+=value; }
       if(lead.status==="completed"){ metrics.completed++; metrics.completed_value_cents+=value; }
     }
@@ -333,7 +334,7 @@ async function handleAdminApi(request,env,url){
       if(!lead) return jsonResponse({error:"Lead not found"},404);
       const body=await request.json();
 
-      const status=body.status===undefined?lead.status:String(body.status);
+      let status=body.status===undefined?lead.status:String(body.status);
       if(!ADMIN_STATUSES.has(status)) return jsonResponse({error:"Invalid status"},400);
 
       let amount=lead.estimate_amount_cents;
@@ -343,6 +344,7 @@ async function handleAdminApi(request,env,url){
       }
 
       let scheduled=body.scheduled_for===undefined?lead.scheduled_for:(body.scheduled_for||null);
+      if(status==="accepted"&&scheduled) status="scheduled";
       let nextFollow=body.next_followup_at===undefined?lead.next_followup_at:(body.next_followup_at||null);
       let unsub=body.unsubscribed===undefined?Number(lead.unsubscribed||0):(body.unsubscribed?1:0);
       let completed=lead.completed_at;
