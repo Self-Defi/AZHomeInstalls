@@ -67,7 +67,158 @@ function arrayBufferToBase64(buffer) {
   return btoa(binary);
 }
 
+function isValidEmail(value) {
+  return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(String(value || "").trim());
+}
+
+async function logLeadEvent(env, leadId, eventType, detail = {}) {
+  if (!env.LEADS_DB || !leadId) return;
+  await env.LEADS_DB.prepare(
+    "INSERT INTO lead_events (lead_id, event_type, detail) VALUES (?, ?, ?)"
+  ).bind(leadId, eventType, JSON.stringify(detail)).run();
+}
+
+async function sendCustomerMessage(env, { to, subject, text, html, replyTo }) {
+  const from = String(env.FROM_EMAIL || "").trim();
+  const recipient = String(to || "").trim();
+  if (!isValidEmail(from) || !isValidEmail(recipient)) {
+    throw new Error("Invalid sender or recipient address for customer message");
+  }
+
+  return env.EMAIL.send({
+    to: recipient,
+    from,
+    replyTo: replyTo || from,
+    subject,
+    text,
+    html
+  });
+}
+
+async function sendImmediateConfirmation(env, lead) {
+  const subject = "We received your AZHomeInstalls request";
+  const text = [
+    `Hi ${lead.name},`,
+    "",
+    "Thanks for contacting AZHomeInstalls. We received your project request and will review the details and photos before scheduling.",
+    "",
+    `Reference: ${lead.leadCode}`,
+    `Service: ${lead.service}`,
+    "",
+    "If you need to add anything, reply directly to this email.",
+    "",
+    "AZHomeInstalls",
+    "Residential Installation Services"
+  ].join("\n");
+
+  const html = `
+    <p>Hi ${esc(lead.name)},</p>
+    <p>Thanks for contacting AZHomeInstalls. We received your project request and will review the details and photos before scheduling.</p>
+    <p><strong>Reference:</strong> ${esc(lead.leadCode)}<br>
+    <strong>Service:</strong> ${esc(lead.service)}</p>
+    <p>If you need to add anything, reply directly to this email.</p>
+    <p>AZHomeInstalls<br>Residential Installation Services</p>`;
+
+  await sendCustomerMessage(env, {
+    to: lead.email,
+    subject,
+    text,
+    html,
+    replyTo: env.FROM_EMAIL
+  });
+}
+
+function followupTemplate(stage, lead) {
+  if (stage === 0) {
+    return {
+      subject: `AZHomeInstalls — checking in on ${lead.service}`,
+      text: `Hi ${lead.name},\n\nWe’re reviewing your ${lead.service} request. If there is anything else we should know about the project, reply to this email and send it over.\n\nReference: ${lead.lead_code}\n\nAZHomeInstalls`,
+      html: `<p>Hi ${esc(lead.name)},</p><p>We’re reviewing your <strong>${esc(lead.service)}</strong> request. If there is anything else we should know about the project, reply to this email and send it over.</p><p><strong>Reference:</strong> ${esc(lead.lead_code)}</p><p>AZHomeInstalls</p>`
+    };
+  }
+  if (stage === 1) {
+    return {
+      subject: `Still interested in your ${lead.service} project?`,
+      text: `Hi ${lead.name},\n\nJust checking in on your ${lead.service} project. If you’re ready to move forward, reply here and we’ll coordinate the next step.\n\nReference: ${lead.lead_code}\n\nAZHomeInstalls`,
+      html: `<p>Hi ${esc(lead.name)},</p><p>Just checking in on your <strong>${esc(lead.service)}</strong> project. If you’re ready to move forward, reply here and we’ll coordinate the next step.</p><p><strong>Reference:</strong> ${esc(lead.lead_code)}</p><p>AZHomeInstalls</p>`
+    };
+  }
+  return {
+    subject: `Final follow-up — ${lead.service}`,
+    text: `Hi ${lead.name},\n\nThis is our final follow-up on your ${lead.service} request. If you still want to move forward, just reply to this email and we’ll pick it back up.\n\nReference: ${lead.lead_code}\n\nAZHomeInstalls`,
+    html: `<p>Hi ${esc(lead.name)},</p><p>This is our final follow-up on your <strong>${esc(lead.service)}</strong> request. If you still want to move forward, just reply to this email and we’ll pick it back up.</p><p><strong>Reference:</strong> ${esc(lead.lead_code)}</p><p>AZHomeInstalls</p>`
+  };
+}
+
+async function processDueFollowups(env) {
+  if (!env.LEADS_DB || !env.EMAIL) return;
+
+  const now = new Date().toISOString();
+  const { results = [] } = await env.LEADS_DB.prepare(
+    `SELECT id, lead_code, name, email, service, status, followup_stage, created_at
+     FROM leads
+     WHERE unsubscribed = 0
+       AND status IN ('new', 'contacted', 'estimate_sent')
+       AND next_followup_at IS NOT NULL
+       AND next_followup_at <= ?
+       AND followup_stage < 3
+     ORDER BY next_followup_at ASC
+     LIMIT 25`
+  ).bind(now).all();
+
+  for (const lead of results) {
+    try {
+      const template = followupTemplate(Number(lead.followup_stage), lead);
+      await sendCustomerMessage(env, {
+        to: lead.email,
+        subject: template.subject,
+        text: template.text,
+        html: template.html,
+        replyTo: env.FROM_EMAIL
+      });
+
+      const nextStage = Number(lead.followup_stage) + 1;
+      let nextFollowup = null;
+
+      if (nextStage === 1) {
+        nextFollowup = new Date(Date.parse(lead.created_at) + 72 * 60 * 60 * 1000).toISOString();
+      } else if (nextStage === 2) {
+        nextFollowup = new Date(Date.parse(lead.created_at) + 7 * 24 * 60 * 60 * 1000).toISOString();
+      }
+
+      await env.LEADS_DB.prepare(
+        `UPDATE leads
+         SET followup_stage = ?,
+             next_followup_at = ?,
+             last_contact_at = ?,
+             status = CASE WHEN status = 'new' THEN 'contacted' ELSE status END,
+             updated_at = ?
+         WHERE id = ?`
+      ).bind(nextStage, nextFollowup, now, now, lead.id).run();
+
+      await logLeadEvent(env, lead.id, "followup_sent", {
+        stage: nextStage,
+        subject: template.subject
+      });
+    } catch (error) {
+      console.error("Lead follow-up failed", {
+        leadId: lead.id,
+        leadCode: lead.lead_code,
+        message: error?.message || String(error)
+      });
+      await logLeadEvent(env, lead.id, "followup_failed", {
+        stage: Number(lead.followup_stage),
+        message: error?.message || String(error)
+      });
+    }
+  }
+}
+
 export default {
+  async scheduled(event, env, ctx) {
+    ctx.waitUntil(processDueFollowups(env));
+  },
+
   async fetch(request, env) {
     const url = new URL(request.url);
 
@@ -168,9 +319,6 @@ export default {
         <p>${esc(description).replace(/\n/g, "<br>")}</p>
         <p><strong>Scope acknowledgment:</strong> ${esc(ack)}</p>`;
 
-      const isValidEmail = (value) =>
-        /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(String(value || "").trim());
-
       const destinationEmail = String(env.DESTINATION_EMAIL || "").trim();
       const fromEmail = String(env.FROM_EMAIL || "").trim();
       const replyToEmail = String(email || "").trim();
@@ -206,6 +354,32 @@ export default {
         messageId: sendResult?.messageId || null,
         attachmentCount: attachments.length
       });
+
+      if (storedLead?.id) {
+        await logLeadEvent(env, storedLead.id, "internal_notification_sent", {
+          messageId: sendResult?.messageId || null
+        });
+
+        try {
+          await sendImmediateConfirmation(env, {
+            name,
+            email,
+            service,
+            leadCode: storedLead.leadCode
+          });
+          await logLeadEvent(env, storedLead.id, "customer_confirmation_sent", {
+            to: email
+          });
+        } catch (confirmationError) {
+          console.error("Customer confirmation failed", {
+            leadId: storedLead.id,
+            message: confirmationError?.message || String(confirmationError)
+          });
+          await logLeadEvent(env, storedLead.id, "customer_confirmation_failed", {
+            message: confirmationError?.message || String(confirmationError)
+          });
+        }
+      }
 
       return Response.redirect("https://azhomeinstalls.com/thanks/", 303);
     } catch (error) {
