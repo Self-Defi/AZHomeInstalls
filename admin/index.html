@@ -13,7 +13,7 @@
     .admin-title h1{font-size:clamp(2.2rem,5vw,4.4rem);margin:.35rem 0 .5rem}.admin-title p{margin:0;color:#666}
     .admin-grid{display:grid;grid-template-columns:repeat(5,1fr);gap:14px;margin:22px 0}.metric{background:#fff;border:1px solid var(--line);border-radius:18px;padding:18px}.metric b{display:block;font-size:1.8rem;margin-top:6px}
     .value-grid{display:grid;grid-template-columns:repeat(3,1fr);gap:14px;margin:0 0 22px}.value-card{background:#111;color:#fff;border-radius:18px;padding:17px}.value-card small{color:#bbb}.value-card b{display:block;font-size:1.5rem;margin-top:6px}.value-card.gold b{color:var(--gold2)}
-    .attention-panel{background:#fff;border:1px solid var(--line);border-radius:18px;padding:16px 18px;margin:0 0 22px}.schedule-admin{background:#fff;border:1px solid var(--line);border-radius:18px;padding:16px 18px;margin:0 0 22px}.schedule-admin h3{margin:0 0 6px}.slot-admin-form{display:grid;grid-template-columns:1fr auto;gap:10px;margin-top:12px}.slot-admin-list{display:grid;gap:8px;margin-top:14px}.slot-admin-row{display:flex;align-items:center;justify-content:space-between;gap:12px;border-top:1px solid var(--line);padding-top:10px}.slot-admin-row:first-child{border-top:0}.slot-admin-row small{display:block;color:#777}.slot-admin-row.booked{background:#f2fbf4;border:1px solid #cfe8d6;border-radius:12px;padding:10px}.slot-admin-empty{color:#777}.attention-head{display:flex;align-items:center;justify-content:space-between;gap:12px;margin-bottom:10px}.attention-head h3{margin:0;font-size:1.05rem}.attention-count{background:#fff2c7;border-radius:999px;padding:5px 9px;font-weight:850;font-size:.8rem}.attention-list{display:grid;gap:8px}.attention-item{display:flex;align-items:center;justify-content:space-between;gap:12px;padding:10px 0;border-top:1px solid var(--line)}.attention-item:first-child{border-top:0}.attention-item button{white-space:nowrap}.attention-copy strong{display:block}.attention-copy small{color:#777}.attention-item.accepted{background:#f2fbf4;border:1px solid #cfe8d6;border-radius:12px;padding:12px}.attention-item.accepted .attention-copy small{color:#356046}.attention-none{color:#777}
+    .attention-panel{background:#fff;border:1px solid var(--line);border-radius:18px;padding:16px 18px;margin:0 0 22px}.schedule-admin{background:#fff;border:1px solid var(--line);border-radius:18px;padding:16px 18px;margin:0 0 22px}.schedule-admin h3{margin:0 0 6px}.calendar-head{display:flex;align-items:flex-start;justify-content:space-between;gap:14px}.calendar-badge{display:inline-flex;align-items:center;gap:7px;border-radius:999px;padding:7px 10px;font-weight:850;font-size:.78rem;background:#f1efe8}.calendar-badge.live{background:#e4f5e9;color:#1d5c36}.calendar-rules{display:grid;grid-template-columns:repeat(3,1fr);gap:10px;margin:14px 0}.calendar-rule{background:#faf9f5;border-radius:12px;padding:12px}.calendar-rule small{display:block;color:#777}.calendar-rule strong{display:block;margin-top:4px}.manual-fallback{border-top:1px solid var(--line);margin-top:16px;padding-top:14px}.schedule-admin h3{margin:0 0 6px}.slot-admin-form{display:grid;grid-template-columns:1fr auto;gap:10px;margin-top:12px}.slot-admin-list{display:grid;gap:8px;margin-top:14px}.slot-admin-row{display:flex;align-items:center;justify-content:space-between;gap:12px;border-top:1px solid var(--line);padding-top:10px}.slot-admin-row:first-child{border-top:0}.slot-admin-row small{display:block;color:#777}.slot-admin-row.booked{background:#f2fbf4;border:1px solid #cfe8d6;border-radius:12px;padding:10px}.slot-admin-empty{color:#777}.attention-head{display:flex;align-items:center;justify-content:space-between;gap:12px;margin-bottom:10px}.attention-head h3{margin:0;font-size:1.05rem}.attention-count{background:#fff2c7;border-radius:999px;padding:5px 9px;font-weight:850;font-size:.8rem}.attention-list{display:grid;gap:8px}.attention-item{display:flex;align-items:center;justify-content:space-between;gap:12px;padding:10px 0;border-top:1px solid var(--line)}.attention-item:first-child{border-top:0}.attention-item button{white-space:nowrap}.attention-copy strong{display:block}.attention-copy small{color:#777}.attention-item.accepted{background:#f2fbf4;border:1px solid #cfe8d6;border-radius:12px;padding:12px}.attention-item.accepted .attention-copy small{color:#356046}.attention-none{color:#777}
     .toolbar{display:flex;gap:10px;flex-wrap:wrap;margin:18px 0}.toolbar input,.toolbar select{margin:0;min-height:48px;background:#fff}.toolbar input{flex:1;min-width:220px}.toolbar select{width:auto}
     .lead-table-wrap{overflow:auto;background:#fff;border:1px solid var(--line);border-radius:20px}.lead-table{width:100%;border-collapse:collapse;min-width:980px}
     .lead-table th,.lead-table td{padding:15px 16px;border-bottom:1px solid var(--line);text-align:left;vertical-align:middle}.lead-table th{font-size:.78rem;text-transform:uppercase;letter-spacing:.08em;color:#777;background:#fbfaf7}
@@ -68,13 +68,28 @@
         <div class="attention-list" id="attentionList"><div class="attention-none">No leads currently require action.</div></div>
       </div>
       <div class="schedule-admin">
-        <h3>Customer scheduling availability</h3>
-        <p class="muted">Add only installation times you are willing to offer customers after estimate acceptance.</p>
-        <div class="slot-admin-form">
-          <input id="newSlot" type="datetime-local" aria-label="New installation time">
-          <button class="btn btn-dark" id="addSlot" type="button">Add time</button>
+        <div class="calendar-head">
+          <div>
+            <h3>Google Calendar scheduling</h3>
+            <p class="muted">Customer availability is generated from your calendar and AZHomeInstalls booking rules.</p>
+          </div>
+          <span class="calendar-badge" id="calendarStatus">Checking…</span>
         </div>
-        <div class="slot-admin-list" id="slotAdminList"><div class="slot-admin-empty">Loading appointment times…</div></div>
+        <div class="calendar-rules">
+          <div class="calendar-rule"><small>Standard hours</small><strong>8:00 AM–4:00 PM</strong></div>
+          <div class="calendar-rule"><small>Days</small><strong>Monday–Sunday</strong></div>
+          <div class="calendar-rule"><small>After hours</small><strong>Emergency premium</strong></div>
+        </div>
+        <p class="muted" id="calendarMessage">Checking calendar connection…</p>
+        <div class="manual-fallback">
+          <h3 style="font-size:1rem">Manual availability fallback</h3>
+          <p class="muted">Use these only if Google Calendar sync is unavailable or you want to offer a specific override time.</p>
+          <div class="slot-admin-form">
+            <input id="newSlot" type="datetime-local" aria-label="New installation time">
+            <button class="btn btn-dark" id="addSlot" type="button">Add override</button>
+          </div>
+          <div class="slot-admin-list" id="slotAdminList"><div class="slot-admin-empty">Loading override times…</div></div>
+        </div>
       </div>
       <div class="toolbar">
         <input id="search" type="search" placeholder="Search name, lead ID, email, service…">
@@ -129,6 +144,7 @@
 <script>
 const API="/api/admin/leads";
 const SLOT_API="/api/admin/slots";
+const CALENDAR_STATUS_API="/api/admin/calendar-status";
 const AZ_TZ="America/Phoenix";
 let leads=[];
 let activeLead=null;
@@ -185,6 +201,24 @@ function render(){
   cards.innerHTML=filtered.map(l=>{const a=leadAge(l.created_at);return '<article class="lead-card" data-id="'+l.id+'"><div class="lead-card-top"><div><div class="code">'+escHtml(l.lead_code)+'</div><h3>'+escHtml(l.name)+'</h3></div><span class="status '+escHtml(l.status)+'">'+escHtml(statusLabel(l.status))+'</span></div><p>'+escHtml(l.service)+'</p><div class="lead-card-grid"><div><small>Estimate</small><strong>'+money(l.estimate_amount_cents)+'</strong></div><div><small>Lead age</small><strong class="age '+a.cls+'">'+a.label+'</strong></div><div><small>Next follow-up</small><strong>'+fmtAZ(l.next_followup_at)+'</strong></div><div><small>Submitted</small><strong>'+fmtAZ(l.created_at)+'</strong></div></div><div class="quick-links"><a href="'+phoneHref(l.phone)+'" onclick="event.stopPropagation()">Call</a><a href="mailto:'+encodeURIComponent(l.email)+'" onclick="event.stopPropagation()">Email</a><button type="button" onclick="event.stopPropagation();openLead('+l.id+')">Open</button></div></article>'}).join("");
   document.querySelectorAll("[data-id]").forEach(r=>r.addEventListener("click",()=>openLead(Number(r.dataset.id))));
 }
+async function loadCalendarStatus(){
+  const badge=document.getElementById("calendarStatus"),msg=document.getElementById("calendarMessage");
+  try{
+    const r=await fetch(CALENDAR_STATUS_API,{credentials:"same-origin",headers:{"Accept":"application/json"}});
+    const d=await r.json();if(!r.ok)throw new Error(d.error||("HTTP "+r.status));
+    if(d.configured){
+      badge.textContent="Calendar live";badge.className="calendar-badge live";
+      msg.textContent="Google Calendar is the availability source. Busy events are excluded before customers see a time.";
+    }else{
+      badge.textContent="Setup required";badge.className="calendar-badge";
+      msg.textContent="Calendar-aware scheduling is ready in the Worker, but Google API credentials still need to be added to Cloudflare. Manual override times remain available until then.";
+    }
+  }catch(err){
+    badge.textContent="Status unavailable";badge.className="calendar-badge";
+    msg.textContent="Unable to read calendar integration status.";
+  }
+}
+
 async function loadSlots(){
   const list=document.getElementById("slotAdminList");
   try{
@@ -272,7 +306,8 @@ async function sendEstimate(){
   if(!raw||!Number.isFinite(cents)||cents<=0){alert("Enter an estimate amount first.");return}
   if(!confirm("Send a "+money(cents)+" estimate to "+activeLead.email+"?"))return;
   const b=document.getElementById("sendEstimate");b.disabled=true;b.textContent="Sending…";
-  try{const r=await fetch(API+"/"+activeLead.id+"/estimate",{method:"POST",credentials:"same-origin",headers:{"Content-Type":"application/json","Accept":"application/json"},body:JSON.stringify({estimate_amount_cents:cents})});const d=await r.json();if(!r.ok)throw new Error(d.error||("HTTP "+r.status));document.getElementById("leadDialog").close();await loadSlots();
+  try{const r=await fetch(API+"/"+activeLead.id+"/estimate",{method:"POST",credentials:"same-origin",headers:{"Content-Type":"application/json","Accept":"application/json"},body:JSON.stringify({estimate_amount_cents:cents})});const d=await r.json();if(!r.ok)throw new Error(d.error||("HTTP "+r.status));document.getElementById("leadDialog").close();await loadCalendarStatus();
+loadSlots();
 loadLeads();setNotice("<strong>Estimate sent:</strong> "+money(cents)+" to "+escHtml(activeLead.email)+".","ok")}catch(e){alert("Estimate failed: "+e.message)}finally{b.disabled=false;b.textContent="Send estimate"}
 }
 async function saveNote(){
