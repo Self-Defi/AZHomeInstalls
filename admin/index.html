@@ -18,7 +18,7 @@
     .lead-table-wrap{overflow:auto;background:#fff;border:1px solid var(--line);border-radius:20px}.lead-table{width:100%;border-collapse:collapse;min-width:980px}
     .lead-table th,.lead-table td{padding:15px 16px;border-bottom:1px solid var(--line);text-align:left;vertical-align:middle}.lead-table th{font-size:.78rem;text-transform:uppercase;letter-spacing:.08em;color:#777;background:#fbfaf7}
     .lead-table tr[data-id]{cursor:pointer}.lead-table tr[data-id]:hover{background:#fffaf0}.status{display:inline-flex;padding:6px 9px;border-radius:999px;background:#efede6;font-size:.78rem;font-weight:850}
-    .status.new{background:#fff2c7}.status.contacted{background:#eaf2ff}.status.estimate_sent{background:#eee7ff}.status.scheduled{background:#def6e7}.status.completed{background:#d9f3e2}.status.lost,.status.do_not_contact{background:#f2e3e3}
+    .status.new{background:#fff2c7}.status.contacted{background:#eaf2ff}.status.estimate_sent{background:#eee7ff}.status.accepted{background:#e4f5e9}.status.scheduled{background:#def6e7}.status.completed{background:#d9f3e2}.status.lost,.status.do_not_contact{background:#f2e3e3}
     .notice{background:#111;color:#fff;border-radius:18px;padding:18px;margin:18px 0}.notice strong{color:var(--gold2)}.notice.ok{background:#173b27}.notice.error{background:#5a2020}
     .muted{color:#777}.empty{padding:42px;text-align:center;color:#777}.money{font-variant-numeric:tabular-nums}.age{font-weight:850}.age.warn{color:#a46300}.age.overdue{color:#a02a2a}
     .mobile-cards{display:none}.lead-card{background:#fff;border:1px solid var(--line);border-radius:18px;padding:16px;margin-bottom:12px;cursor:pointer}.lead-card-top{display:flex;justify-content:space-between;gap:12px;align-items:flex-start}.lead-card h3{margin:0;font-size:1.05rem}.lead-card .code{color:#777;font-size:.8rem;font-weight:800}.lead-card-grid{display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-top:14px}.lead-card-grid div{background:#faf9f5;border-radius:12px;padding:10px}.lead-card-grid small{display:block;color:#777}.lead-card-grid strong{display:block;margin-top:3px}.quick-links{display:flex;gap:8px;margin-top:12px}.quick-links a,.quick-links button{flex:1;text-align:center;text-decoration:none;padding:10px;border-radius:10px;border:1px solid var(--line);font-weight:850;color:#111;background:#fff}.quick-links button{cursor:pointer}
@@ -69,7 +69,7 @@
       <div class="toolbar">
         <input id="search" type="search" placeholder="Search name, lead ID, email, service…">
         <select id="statusFilter">
-          <option value="">All statuses</option><option value="new">New</option><option value="contacted">Contacted</option><option value="estimate_sent">Estimate sent</option><option value="scheduled">Scheduled</option><option value="completed">Completed</option><option value="lost">Lost</option><option value="do_not_contact">Do not contact</option>
+          <option value="">All statuses</option><option value="new">New</option><option value="contacted">Contacted</option><option value="estimate_sent">Estimate sent</option><option value="accepted">Accepted</option><option value="scheduled">Scheduled</option><option value="completed">Completed</option><option value="lost">Lost</option><option value="do_not_contact">Do not contact</option>
         </select>
         <button class="btn btn-outline" id="refreshBtn" type="button">Refresh</button>
       </div>
@@ -94,7 +94,7 @@
     </div>
     <div class="detail-grid" id="leadDetails"></div>
     <div class="edit-grid">
-      <label>Status<select id="editStatus"><option value="new">New</option><option value="contacted">Contacted</option><option value="estimate_sent">Estimate sent</option><option value="scheduled">Scheduled</option><option value="completed">Completed</option><option value="lost">Lost</option><option value="do_not_contact">Do not contact</option></select></label>
+      <label>Status<select id="editStatus"><option value="new">New</option><option value="contacted">Contacted</option><option value="estimate_sent">Estimate sent</option><option value="accepted">Accepted</option><option value="scheduled">Scheduled</option><option value="completed">Completed</option><option value="lost">Lost</option><option value="do_not_contact">Do not contact</option></select></label>
       <label>Estimate amount ($)<input id="editEstimate" type="number" min="0" step="0.01" placeholder="0.00"></label>
       <label>Scheduled for<input id="editScheduled" type="datetime-local"></label>
       <label>Next follow-up<input id="editFollowup" type="datetime-local"></label>
@@ -123,7 +123,7 @@ let leads=[];
 let activeLead=null;
 
 const escHtml=(v="")=>String(v).replace(/[&<>"']/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#039;"}[c]));
-const statusLabel=s=>({new:"New",contacted:"Contacted",estimate_sent:"Estimate sent",scheduled:"Scheduled",completed:"Completed",lost:"Lost",do_not_contact:"Do not contact"}[s]||s);
+const statusLabel=s=>({new:"New",contacted:"Contacted",estimate_sent:"Estimate sent",accepted:"Accepted",scheduled:"Scheduled",completed:"Completed",lost:"Lost",do_not_contact:"Do not contact"}[s]||s);
 const fmtAZ=v=>{if(!v)return"—";const d=new Date(v);if(Number.isNaN(d.getTime()))return v;return new Intl.DateTimeFormat("en-US",{timeZone:AZ_TZ,month:"short",day:"numeric",year:"numeric",hour:"numeric",minute:"2-digit"}).format(d)};
 const money=c=>c==null?"—":new Intl.NumberFormat("en-US",{style:"currency",currency:"USD"}).format(Number(c)/100);
 const toLocalInput=v=>{if(!v)return"";const d=new Date(v);if(Number.isNaN(d.getTime()))return"";const p=new Intl.DateTimeFormat("en-CA",{timeZone:AZ_TZ,year:"numeric",month:"2-digit",day:"2-digit",hour:"2-digit",minute:"2-digit",hourCycle:"h23"}).formatToParts(d).reduce((o,x)=>(o[x.type]=x.value,o),{});return p.year+"-"+p.month+"-"+p.day+"T"+p.hour+":"+p.minute};
@@ -142,7 +142,7 @@ function computeMetrics(items){
   for(const l of items){
     const value=Number(l.estimate_amount_cents||0);
     if(l.status==="new")m.new++;
-    if(["new","contacted","estimate_sent"].includes(l.status)){m.open++;m.open_value_cents+=value}
+    if(["new","contacted","estimate_sent","accepted"].includes(l.status)){m.open++;m.open_value_cents+=value}
     if(l.status==="scheduled"){m.scheduled++;m.scheduled_value_cents+=value}
     if(l.status==="completed"){m.completed++;m.completed_value_cents+=value}
   }
