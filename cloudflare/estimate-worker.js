@@ -214,6 +214,138 @@ async function processDueFollowups(env) {
   }
 }
 
+
+const ADMIN_STATUSES = new Set(["new","contacted","estimate_sent","scheduled","completed","lost","do_not_contact"]);
+
+function jsonResponse(data,status=200){
+  return new Response(JSON.stringify(data),{
+    status,
+    headers:{"Content-Type":"application/json; charset=utf-8","Cache-Control":"no-store"}
+  });
+}
+
+async function getLeadById(env,id){
+  return env.LEADS_DB.prepare(
+    "SELECT id, lead_code, name, phone, email, zip, service, description, photo_count, scope_acknowledgment, source, status, followup_stage, next_followup_at, last_contact_at, estimate_amount_cents, scheduled_for, completed_at, unsubscribed, created_at, updated_at FROM leads WHERE id = ?"
+  ).bind(id).first();
+}
+
+async function handleAdminApi(request,env,url){
+  if(!env.LEADS_DB) return jsonResponse({error:"Lead database unavailable"},503);
+  const parts=url.pathname.split("/").filter(Boolean);
+
+  if(parts.length===3 && parts[0]==="api" && parts[1]==="admin" && parts[2]==="leads"){
+    if(request.method!=="GET") return jsonResponse({error:"Method not allowed"},405);
+    const {results=[]}=await env.LEADS_DB.prepare(
+      "SELECT id, lead_code, name, phone, email, zip, service, status, followup_stage, next_followup_at, last_contact_at, estimate_amount_cents, scheduled_for, completed_at, unsubscribed, created_at, updated_at FROM leads ORDER BY datetime(created_at) DESC, id DESC LIMIT 500"
+    ).all();
+
+    const metrics={new:0,open:0,scheduled:0,completed:0};
+    for(const lead of results){
+      if(lead.status==="new") metrics.new++;
+      if(["new","contacted","estimate_sent"].includes(lead.status)) metrics.open++;
+      if(lead.status==="scheduled") metrics.scheduled++;
+      if(lead.status==="completed") metrics.completed++;
+    }
+    return jsonResponse({leads:results,metrics});
+  }
+
+  if(parts.length===4 && parts[0]==="api" && parts[1]==="admin" && parts[2]==="leads"){
+    const id=Number(parts[3]);
+    if(!Number.isInteger(id)||id<1) return jsonResponse({error:"Invalid lead id"},400);
+
+    if(request.method==="GET"){
+      const lead=await getLeadById(env,id);
+      if(!lead) return jsonResponse({error:"Lead not found"},404);
+      const {results:events=[]}=await env.LEADS_DB.prepare(
+        "SELECT id, event_type, detail, created_at FROM lead_events WHERE lead_id = ? ORDER BY id DESC LIMIT 100"
+      ).bind(id).all();
+      return jsonResponse({lead,events});
+    }
+
+    if(request.method==="PATCH"){
+      const lead=await getLeadById(env,id);
+      if(!lead) return jsonResponse({error:"Lead not found"},404);
+      const body=await request.json();
+
+      const status=body.status===undefined?lead.status:String(body.status);
+      if(!ADMIN_STATUSES.has(status)) return jsonResponse({error:"Invalid status"},400);
+
+      let amount=lead.estimate_amount_cents;
+      if(body.estimate_amount_cents!==undefined){
+        amount=(body.estimate_amount_cents===null||body.estimate_amount_cents==="")?null:Math.round(Number(body.estimate_amount_cents));
+        if(amount!==null&&!Number.isFinite(amount)) return jsonResponse({error:"Invalid estimate amount"},400);
+      }
+
+      let scheduled=body.scheduled_for===undefined?lead.scheduled_for:(body.scheduled_for||null);
+      let nextFollow=body.next_followup_at===undefined?lead.next_followup_at:(body.next_followup_at||null);
+      let unsub=body.unsubscribed===undefined?Number(lead.unsubscribed||0):(body.unsubscribed?1:0);
+      let completed=lead.completed_at;
+
+      if(["scheduled","completed","lost","do_not_contact"].includes(status)) nextFollow=null;
+      if(status==="completed"&&!completed) completed=new Date().toISOString();
+      if(status!=="completed") completed=null;
+      if(status==="do_not_contact") unsub=1;
+
+      const now=new Date().toISOString();
+      await env.LEADS_DB.prepare(
+        "UPDATE leads SET status=?, estimate_amount_cents=?, scheduled_for=?, next_followup_at=?, completed_at=?, unsubscribed=?, updated_at=? WHERE id=?"
+      ).bind(status,amount,scheduled,nextFollow,completed,unsub,now,id).run();
+
+      await logLeadEvent(env,id,"lead_updated",{
+        status,
+        estimate_amount_cents:amount,
+        scheduled_for:scheduled,
+        next_followup_at:nextFollow,
+        unsubscribed:unsub
+      });
+
+      return jsonResponse({lead:await getLeadById(env,id)});
+    }
+
+    return jsonResponse({error:"Method not allowed"},405);
+  }
+
+  if(parts.length===5 && parts[0]==="api" && parts[1]==="admin" && parts[2]==="leads" && parts[4]==="followup"){
+    const id=Number(parts[3]);
+    if(!Number.isInteger(id)||id<1) return jsonResponse({error:"Invalid lead id"},400);
+    if(request.method!=="POST") return jsonResponse({error:"Method not allowed"},405);
+    if(!env.EMAIL) return jsonResponse({error:"Email binding unavailable"},503);
+
+    const lead=await getLeadById(env,id);
+    if(!lead) return jsonResponse({error:"Lead not found"},404);
+    if(Number(lead.unsubscribed||0)===1||lead.status==="do_not_contact"){
+      return jsonResponse({error:"Lead is not eligible for nurture emails"},409);
+    }
+
+    const stage=Math.min(Number(lead.followup_stage||0),2);
+    const template=followupTemplate(stage,lead);
+
+    await sendCustomerMessage(env,{
+      to:lead.email,
+      subject:template.subject,
+      text:template.text,
+      html:template.html,
+      replyTo:env.FROM_EMAIL
+    });
+
+    const now=new Date().toISOString();
+    const nextStage=Math.min(stage+1,3);
+    let nextFollowup=null;
+    if(nextStage===1) nextFollowup=new Date(Date.now()+48*60*60*1000).toISOString();
+    if(nextStage===2) nextFollowup=new Date(Date.now()+4*24*60*60*1000).toISOString();
+
+    await env.LEADS_DB.prepare(
+      "UPDATE leads SET followup_stage=?, next_followup_at=?, last_contact_at=?, status=CASE WHEN status='new' THEN 'contacted' ELSE status END, updated_at=? WHERE id=?"
+    ).bind(nextStage,nextFollowup,now,now,id).run();
+
+    await logLeadEvent(env,id,"manual_followup_sent",{stage:nextStage,subject:template.subject});
+    return jsonResponse({ok:true,lead:await getLeadById(env,id)});
+  }
+
+  return jsonResponse({error:"Admin API route not found"},404);
+}
+
 export default {
   async scheduled(event, env, ctx) {
     ctx.waitUntil(processDueFollowups(env));
@@ -221,6 +353,19 @@ export default {
 
   async fetch(request, env) {
     const url = new URL(request.url);
+
+    if (url.pathname.startsWith("/api/admin/")) {
+      try {
+        return await handleAdminApi(request, env, url);
+      } catch (error) {
+        console.error("Admin API failed", {
+          path: url.pathname,
+          method: request.method,
+          message: error?.message || String(error)
+        });
+        return jsonResponse({ error: "Admin API request failed" }, 500);
+      }
+    }
 
     if (request.method === "OPTIONS") {
       return new Response(null, { status: 204 });
