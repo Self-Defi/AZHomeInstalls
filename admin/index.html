@@ -163,7 +163,7 @@ async function openLead(id){
     document.getElementById("editStatus").value=activeLead.status;document.getElementById("editEstimate").value=activeLead.estimate_amount_cents==null?"":(Number(activeLead.estimate_amount_cents)/100).toFixed(2);
     document.getElementById("editScheduled").value=toLocalInput(activeLead.scheduled_for);document.getElementById("editFollowup").value=toLocalInput(activeLead.next_followup_at);document.getElementById("editNurture").checked=!Number(activeLead.unsubscribed||0);document.getElementById("noteText").value="";
     const events=data.events||[];document.getElementById("eventList").innerHTML=events.length?events.map(e=>'<div class="event '+(e.event_type==="internal_note"?"note":"")+'"><strong>'+escHtml(e.event_type.replaceAll("_"," "))+'</strong><br><small>'+fmtAZ(e.created_at)+'</small>'+(e.detail?'<br><span>'+escHtml(eventDetail(e))+'</span>':"")+'</div>').join(""):'<p class="muted">No history yet.</p>';
-    document.getElementById("leadDialog").showModal();
+    const dlg=document.getElementById("leadDialog");if(!dlg.open)dlg.showModal();
   }catch(e){setNotice("<strong>Lead error:</strong> "+escHtml(e.message),"error")}
 }
 async function saveLead(){
