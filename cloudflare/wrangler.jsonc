@@ -8,6 +8,10 @@
     {
       "pattern": "azhomeinstalls.com/api/estimate*",
       "zone_name": "azhomeinstalls.com"
+    },
+    {
+      "pattern": "azhomeinstalls.com/api/admin*",
+      "zone_name": "azhomeinstalls.com"
     }
   ],
   "send_email": [
