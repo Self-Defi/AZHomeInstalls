@@ -34,7 +34,7 @@
     <div class="status-box" id="statusBox" hidden></div>
     <div class="schedule-box" id="scheduleBox" hidden>
       <h2>Choose your installation time</h2>
-      <p class="muted">Select one of the available Arizona appointment times below.</p>
+      <p class="muted">Available times are shown in Arizona time. Calendar conflicts are removed automatically.</p>
       <div class="slot-grid" id="slotGrid"></div>
     </div>
     <p style="margin-top:20px">Have a question? Reply to your estimate email or email <a href="mailto:info@azhomeinstalls.com">info@azhomeinstalls.com</a>.</p>
@@ -56,7 +56,7 @@ function renderSlots(slots=[]){
   }
   scheduleBox.hidden=false;
   slotGrid.innerHTML=slots.map(s=>'<button class="slot-btn" type="button" data-slot-id="'+s.id+'">'+esc(fmtAZ(s.start_at))+'<small>Arizona time</small></button>').join("");
-  slotGrid.querySelectorAll(".slot-btn").forEach(b=>b.addEventListener("click",()=>schedule(Number(b.dataset.slotId),b)));
+  slotGrid.querySelectorAll(".slot-btn").forEach(b=>b.addEventListener("click",()=>schedule(b.dataset.slotId,b)));
 }
 async function load(){
   if(!token){showError("This estimate link is missing its response token.");return}
