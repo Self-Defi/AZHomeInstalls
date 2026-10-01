@@ -1,0 +1,77 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <base href="/">
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <meta name="theme-color" content="#111111">
+  <title>Estimate Response | AZHomeInstalls</title>
+  <link rel="icon" href="assets/icon.svg" type="image/svg+xml">
+  <link rel="stylesheet" href="css/style.css">
+  <style>
+    body{background:#f7f5ef}.response-shell{min-height:70vh;display:grid;place-items:center;padding:40px 16px}.response-card{width:min(640px,100%);background:#fff;border:1px solid var(--line);border-radius:24px;padding:28px;box-shadow:0 18px 50px rgba(0,0,0,.08)}
+    .response-card h1{margin:.25rem 0 1rem;font-size:clamp(2rem,7vw,3.6rem)}.summary{display:grid;gap:12px;margin:20px 0}.summary div{background:#faf8f2;border-radius:14px;padding:14px}.summary small{display:block;color:#777}.summary strong{display:block;margin-top:4px;font-size:1.1rem}
+    .response-actions{display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-top:24px}.btn-decline{background:#fff;border:1px solid var(--line);color:#111}.status-box{border-radius:16px;padding:16px;margin-top:18px;background:#f3f3f3}.status-box.ok{background:#e4f5e9}.status-box.no{background:#f7e7e7}
+    @media(max-width:620px){.response-card{padding:22px}.response-actions{grid-template-columns:1fr}}
+  </style>
+</head>
+<body>
+<header class="site-header">
+  <div class="container nav">
+    <a class="brand" href="/"><img src="assets/icon.svg" alt=""><span>AZHome<span class="gold">Installs</span><small class="brand-sub">Residential Installation Services</small></span></a>
+  </div>
+</header>
+<main class="response-shell">
+  <section class="response-card">
+    <div class="eyebrow">Estimate Response</div>
+    <h1 id="title">Loading your estimate…</h1>
+    <p id="intro" class="lead">Please wait while we load your project details.</p>
+    <div class="summary" id="summary" hidden></div>
+    <div class="response-actions" id="actions" hidden>
+      <button class="btn btn-primary" id="acceptBtn" type="button">Accept Estimate</button>
+      <button class="btn btn-decline" id="declineBtn" type="button">Decline Estimate</button>
+    </div>
+    <div class="status-box" id="statusBox" hidden></div>
+    <p style="margin-top:20px">Have a question? Reply to your estimate email or email <a href="mailto:info@azhomeinstalls.com">info@azhomeinstalls.com</a>.</p>
+  </section>
+</main>
+<script>
+const token=new URLSearchParams(location.search).get("token");
+const api="/api/estimate-response";
+const money=c=>new Intl.NumberFormat("en-US",{style:"currency",currency:"USD"}).format(Number(c||0)/100);
+const esc=v=>String(v??"").replace(/[&<>"']/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#039;"}[c]));
+const title=document.getElementById("title"),intro=document.getElementById("intro"),summary=document.getElementById("summary"),actions=document.getElementById("actions"),statusBox=document.getElementById("statusBox");
+async function load(){
+  if(!token){showError("This estimate link is missing its response token.");return}
+  try{
+    const r=await fetch(api+"?token="+encodeURIComponent(token),{headers:{"Accept":"application/json"}});
+    const d=await r.json();if(!r.ok)throw new Error(d.error||("HTTP "+r.status));
+    title.textContent="Review your estimate";
+    intro.textContent="Confirm whether you’d like AZHomeInstalls to move forward with this project.";
+    summary.hidden=false;
+    summary.innerHTML='<div><small>Reference</small><strong>'+esc(d.lead_code)+'</strong></div><div><small>Service</small><strong>'+esc(d.service)+'</strong></div><div><small>Estimate</small><strong>'+money(d.amount_cents)+'</strong></div>';
+    if(d.response_status==="pending"){actions.hidden=false}else{showResult(d.response_status)}
+  }catch(e){showError(e.message)}
+}
+function showResult(status){
+  actions.hidden=true;statusBox.hidden=false;
+  if(status==="accepted"){statusBox.className="status-box ok";statusBox.innerHTML="<strong>Estimate accepted.</strong><br>We’ll contact you to coordinate scheduling."}
+  else{statusBox.className="status-box no";statusBox.innerHTML="<strong>Estimate declined.</strong><br>No further estimate follow-up will be sent."}
+}
+function showError(msg){title.textContent="We couldn’t load this estimate.";intro.textContent=msg;actions.hidden=true}
+async function respond(action){
+  const label=action==="accept"?"accept":"decline";
+  if(!confirm("Are you sure you want to "+label+" this estimate?"))return;
+  document.getElementById("acceptBtn").disabled=true;document.getElementById("declineBtn").disabled=true;
+  try{
+    const r=await fetch(api+"?token="+encodeURIComponent(token),{method:"POST",headers:{"Content-Type":"application/json","Accept":"application/json"},body:JSON.stringify({action})});
+    const d=await r.json();if(!r.ok)throw new Error(d.error||("HTTP "+r.status));
+    showResult(d.response_status);
+  }catch(e){alert("Response failed: "+e.message);document.getElementById("acceptBtn").disabled=false;document.getElementById("declineBtn").disabled=false}
+}
+document.getElementById("acceptBtn").addEventListener("click",()=>respond("accept"));
+document.getElementById("declineBtn").addEventListener("click",()=>respond("decline"));
+load();
+</script>
+</body>
+</html>
