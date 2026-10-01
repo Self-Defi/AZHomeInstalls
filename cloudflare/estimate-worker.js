@@ -71,6 +71,38 @@ function isValidEmail(value) {
   return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(String(value || "").trim());
 }
 
+
+function randomToken(bytes=24){
+  const raw=new Uint8Array(bytes);
+  crypto.getRandomValues(raw);
+  let bin="";
+  for(const b of raw) bin+=String.fromCharCode(b);
+  return btoa(bin).replace(/\+/g,"-").replace(/\//g,"_").replace(/=+$/,"");
+}
+
+async function sha256Hex(value){
+  const digest=await crypto.subtle.digest("SHA-256",new TextEncoder().encode(String(value)));
+  return Array.from(new Uint8Array(digest),b=>b.toString(16).padStart(2,"0")).join("");
+}
+
+async function ensureEstimateResponseSchema(env){
+  if(!env.LEADS_DB) return;
+  await env.LEADS_DB.prepare(
+    \`CREATE TABLE IF NOT EXISTS estimate_responses (
+      lead_id INTEGER PRIMARY KEY,
+      token_hash TEXT NOT NULL UNIQUE,
+      amount_cents INTEGER NOT NULL,
+      response_status TEXT NOT NULL DEFAULT 'pending',
+      created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+      responded_at TEXT,
+      FOREIGN KEY (lead_id) REFERENCES leads(id) ON DELETE CASCADE
+    )\`
+  ).run();
+  await env.LEADS_DB.prepare(
+    "CREATE INDEX IF NOT EXISTS idx_estimate_responses_token_hash ON estimate_responses(token_hash)"
+  ).run();
+}
+
 async function logLeadEvent(env, leadId, eventType, detail = {}) {
   if (!env.LEADS_DB || !leadId) return;
   await env.LEADS_DB.prepare(
@@ -129,7 +161,7 @@ async function sendImmediateConfirmation(env, lead) {
 }
 
 
-function estimateTemplate(lead, amountCents) {
+function estimateTemplate(lead, amountCents, responseToken) {
   const amount = new Intl.NumberFormat("en-US",{style:"currency",currency:"USD"}).format(Number(amountCents || 0) / 100);
   const subject = \`AZHomeInstalls estimate — \${lead.service}\`;
   const text = [
@@ -242,7 +274,7 @@ async function processDueFollowups(env) {
 }
 
 
-const ADMIN_STATUSES = new Set(["new","contacted","estimate_sent","scheduled","completed","lost","do_not_contact"]);
+const ADMIN_STATUSES = new Set(["new","contacted","estimate_sent","accepted","scheduled","completed","lost","do_not_contact"]);
 
 function jsonResponse(data,status=200){
   return new Response(JSON.stringify(data),{
@@ -271,7 +303,7 @@ async function handleAdminApi(request,env,url){
     for(const lead of results){
       const value=Number(lead.estimate_amount_cents||0);
       if(lead.status==="new") metrics.new++;
-      if(["new","contacted","estimate_sent"].includes(lead.status)){ metrics.open++; metrics.open_value_cents+=value; }
+      if(["new","contacted","estimate_sent","accepted"].includes(lead.status)){ metrics.open++; metrics.open_value_cents+=value; }
       if(lead.status==="scheduled"){ metrics.scheduled++; metrics.scheduled_value_cents+=value; }
       if(lead.status==="completed"){ metrics.completed++; metrics.completed_value_cents+=value; }
     }
@@ -310,7 +342,7 @@ async function handleAdminApi(request,env,url){
       let unsub=body.unsubscribed===undefined?Number(lead.unsubscribed||0):(body.unsubscribed?1:0);
       let completed=lead.completed_at;
 
-      if(["scheduled","completed","lost","do_not_contact"].includes(status)) nextFollow=null;
+      if(["accepted","scheduled","completed","lost","do_not_contact"].includes(status)) nextFollow=null;
       if(status==="completed"&&!completed) completed=new Date().toISOString();
       if(status!=="completed") completed=null;
       if(status==="do_not_contact") unsub=1;
@@ -365,7 +397,10 @@ async function handleAdminApi(request,env,url){
     const amountCents=Math.round(Number(body.estimate_amount_cents));
     if(!Number.isFinite(amountCents)||amountCents<=0) return jsonResponse({error:"Valid estimate amount is required"},400);
 
-    const template=estimateTemplate(lead,amountCents);
+    await ensureEstimateResponseSchema(env);
+    const responseToken=randomToken();
+    const tokenHash=await sha256Hex(responseToken);
+    const template=estimateTemplate(lead,amountCents,responseToken);
     await sendCustomerMessage(env,{
       to:lead.email,
       subject:template.subject,
@@ -375,6 +410,16 @@ async function handleAdminApi(request,env,url){
     });
 
     const now=new Date().toISOString();
+    await env.LEADS_DB.prepare(
+      `INSERT INTO estimate_responses (lead_id, token_hash, amount_cents, response_status, created_at, responded_at)
+       VALUES (?, ?, ?, 'pending', ?, NULL)
+       ON CONFLICT(lead_id) DO UPDATE SET
+         token_hash=excluded.token_hash,
+         amount_cents=excluded.amount_cents,
+         response_status='pending',
+         created_at=excluded.created_at,
+         responded_at=NULL`
+    ).bind(id,tokenHash,amountCents,now).run();
     const nextFollowup=new Date(Date.now()+48*60*60*1000).toISOString();
     await env.LEADS_DB.prepare(
       "UPDATE leads SET status='estimate_sent', estimate_amount_cents=?, next_followup_at=?, last_contact_at=?, updated_at=? WHERE id=?"
@@ -423,6 +468,107 @@ async function handleAdminApi(request,env,url){
   return jsonResponse({error:"Admin API route not found"},404);
 }
 
+
+async function getEstimateResponseByToken(env,token){
+  if(!env.LEADS_DB||!token) return null;
+  await ensureEstimateResponseSchema(env);
+  const tokenHash=await sha256Hex(token);
+  return env.LEADS_DB.prepare(
+    \`SELECT er.lead_id, er.amount_cents, er.response_status, er.created_at, er.responded_at,
+            l.lead_code, l.name, l.email, l.phone, l.service, l.status
+     FROM estimate_responses er
+     JOIN leads l ON l.id=er.lead_id
+     WHERE er.token_hash=?\`
+  ).bind(tokenHash).first();
+}
+
+async function notifyEstimateResponse(env,lead,action){
+  if(!env.EMAIL) return;
+  const destination=String(env.DESTINATION_EMAIL||"").trim();
+  if(!isValidEmail(destination)) return;
+  const accepted=action==="accept";
+  const amount=new Intl.NumberFormat("en-US",{style:"currency",currency:"USD"}).format(Number(lead.amount_cents||0)/100);
+  const subject=\`Estimate \${accepted?"accepted":"declined"} — \${lead.lead_code}\`;
+  const text=[
+    \`\${lead.name} has \${accepted?"accepted":"declined"} the AZHomeInstalls estimate.\`,
+    "",
+    \`Reference: \${lead.lead_code}\`,
+    \`Service: \${lead.service}\`,
+    \`Estimate: \${amount}\`,
+    \`Customer: \${lead.name}\`,
+    \`Email: \${lead.email}\`,
+    \`Phone: \${lead.phone||""}\`
+  ].join("\n");
+  await sendCustomerMessage(env,{to:destination,subject,text,html:\`<p><strong>\${esc(lead.name)}</strong> has \${accepted?"accepted":"declined"} the estimate.</p><p><strong>Reference:</strong> \${esc(lead.lead_code)}<br><strong>Service:</strong> \${esc(lead.service)}<br><strong>Estimate:</strong> \${esc(amount)}<br><strong>Email:</strong> \${esc(lead.email)}<br><strong>Phone:</strong> \${esc(lead.phone||"")}</p>\`,replyTo:lead.email});
+}
+
+async function sendAcceptanceConfirmation(env,lead){
+  if(!env.EMAIL) return;
+  const amount=new Intl.NumberFormat("en-US",{style:"currency",currency:"USD"}).format(Number(lead.amount_cents||0)/100);
+  await sendCustomerMessage(env,{
+    to:lead.email,
+    subject:\`Estimate accepted — \${lead.service}\`,
+    text:[\`Hi \${lead.name},\`,"",\`We received your acceptance for the \${lead.service} estimate of \${amount}.\`,"","We’ll contact you to coordinate scheduling.", "",\`Reference: \${lead.lead_code}\`,"","AZHomeInstalls"].join("\n"),
+    html:\`<p>Hi \${esc(lead.name)},</p><p>We received your acceptance for the <strong>\${esc(lead.service)}</strong> estimate of <strong>\${esc(amount)}</strong>.</p><p>We’ll contact you to coordinate scheduling.</p><p><strong>Reference:</strong> \${esc(lead.lead_code)}</p><p>AZHomeInstalls</p>\`,
+    replyTo:env.FROM_EMAIL
+  });
+}
+
+async function handleEstimateResponseApi(request,env,url){
+  if(!env.LEADS_DB) return jsonResponse({error:"Lead database unavailable"},503);
+  const token=String(url.searchParams.get("token")||"").trim();
+  if(!token) return jsonResponse({error:"Missing estimate token"},400);
+  const record=await getEstimateResponseByToken(env,token);
+  if(!record) return jsonResponse({error:"Estimate link is invalid"},404);
+
+  if(request.method==="GET"){
+    return jsonResponse({
+      lead_code:record.lead_code,
+      name:record.name,
+      service:record.service,
+      amount_cents:Number(record.amount_cents||0),
+      response_status:record.response_status,
+      lead_status:record.status,
+      responded_at:record.responded_at
+    });
+  }
+
+  if(request.method!=="POST") return jsonResponse({error:"Method not allowed"},405);
+  const body=await request.json().catch(()=>({}));
+  const action=String(body.action||"");
+  if(!["accept","decline"].includes(action)) return jsonResponse({error:"Invalid response"},400);
+
+  if(record.response_status!=="pending"){
+    return jsonResponse({ok:true,already_responded:true,response_status:record.response_status});
+  }
+
+  const now=new Date().toISOString();
+  if(action==="accept"){
+    await env.LEADS_DB.prepare(
+      "UPDATE leads SET status='accepted', next_followup_at=NULL, last_contact_at=?, updated_at=? WHERE id=?"
+    ).bind(now,now,record.lead_id).run();
+    await env.LEADS_DB.prepare(
+      "UPDATE estimate_responses SET response_status='accepted', responded_at=? WHERE lead_id=?"
+    ).bind(now,record.lead_id).run();
+    await logLeadEvent(env,record.lead_id,"estimate_accepted",{amount_cents:Number(record.amount_cents||0),source:"customer_link"});
+  }else{
+    await env.LEADS_DB.prepare(
+      "UPDATE leads SET status='lost', next_followup_at=NULL, last_contact_at=?, updated_at=? WHERE id=?"
+    ).bind(now,now,record.lead_id).run();
+    await env.LEADS_DB.prepare(
+      "UPDATE estimate_responses SET response_status='declined', responded_at=? WHERE lead_id=?"
+    ).bind(now,record.lead_id).run();
+    await logLeadEvent(env,record.lead_id,"estimate_declined",{amount_cents:Number(record.amount_cents||0),source:"customer_link"});
+  }
+
+  const refreshed=await getEstimateResponseByToken(env,token);
+  try{await notifyEstimateResponse(env,refreshed,action)}catch(e){console.error("Estimate response admin notification failed",e?.message||String(e))}
+  if(action==="accept"){
+    try{await sendAcceptanceConfirmation(env,refreshed)}catch(e){console.error("Estimate acceptance confirmation failed",e?.message||String(e))}
+  }
+  return jsonResponse({ok:true,response_status:action==="accept"?"accepted":"declined"});
+}
+
 export default {
   async scheduled(event, env, ctx) {
     ctx.waitUntil(processDueFollowups(env));
@@ -430,6 +576,15 @@ export default {
 
   async fetch(request, env) {
     const url = new URL(request.url);
+
+    if (url.pathname === "/api/estimate-response") {
+      try {
+        return await handleEstimateResponseApi(request, env, url);
+      } catch (error) {
+        console.error("Estimate response API failed", { message: error?.message || String(error) });
+        return jsonResponse({ error: "Estimate response request failed" }, 500);
+      }
+    }
 
     if (url.pathname.startsWith("/api/admin/")) {
       try {
