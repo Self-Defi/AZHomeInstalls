@@ -12,19 +12,27 @@
     body{background:#f7f5ef}.admin-shell{padding:28px 0 70px}.admin-top{display:flex;align-items:center;justify-content:space-between;gap:16px;margin-bottom:22px}
     .admin-title h1{font-size:clamp(2.2rem,5vw,4.4rem);margin:.35rem 0 .5rem}.admin-title p{margin:0;color:#666}
     .admin-grid{display:grid;grid-template-columns:repeat(4,1fr);gap:14px;margin:22px 0}.metric{background:#fff;border:1px solid var(--line);border-radius:18px;padding:18px}.metric b{display:block;font-size:1.8rem;margin-top:6px}
+    .value-grid{display:grid;grid-template-columns:repeat(3,1fr);gap:14px;margin:0 0 22px}.value-card{background:#111;color:#fff;border-radius:18px;padding:17px}.value-card small{color:#bbb}.value-card b{display:block;font-size:1.5rem;margin-top:6px}.value-card.gold b{color:var(--gold2)}
     .toolbar{display:flex;gap:10px;flex-wrap:wrap;margin:18px 0}.toolbar input,.toolbar select{margin:0;min-height:48px;background:#fff}.toolbar input{flex:1;min-width:220px}.toolbar select{width:auto}
     .lead-table-wrap{overflow:auto;background:#fff;border:1px solid var(--line);border-radius:20px}.lead-table{width:100%;border-collapse:collapse;min-width:980px}
     .lead-table th,.lead-table td{padding:15px 16px;border-bottom:1px solid var(--line);text-align:left;vertical-align:middle}.lead-table th{font-size:.78rem;text-transform:uppercase;letter-spacing:.08em;color:#777;background:#fbfaf7}
     .lead-table tr[data-id]{cursor:pointer}.lead-table tr[data-id]:hover{background:#fffaf0}.status{display:inline-flex;padding:6px 9px;border-radius:999px;background:#efede6;font-size:.78rem;font-weight:850}
     .status.new{background:#fff2c7}.status.contacted{background:#eaf2ff}.status.estimate_sent{background:#eee7ff}.status.scheduled{background:#def6e7}.status.completed{background:#d9f3e2}.status.lost,.status.do_not_contact{background:#f2e3e3}
     .notice{background:#111;color:#fff;border-radius:18px;padding:18px;margin:18px 0}.notice strong{color:var(--gold2)}.notice.ok{background:#173b27}.notice.error{background:#5a2020}
-    .muted{color:#777}.empty{padding:42px;text-align:center;color:#777}.money{font-variant-numeric:tabular-nums}
-    dialog{width:min(820px,calc(100% - 24px));border:0;border-radius:22px;padding:0;box-shadow:0 30px 90px rgba(0,0,0,.25)}dialog::backdrop{background:rgba(0,0,0,.45)}
+    .muted{color:#777}.empty{padding:42px;text-align:center;color:#777}.money{font-variant-numeric:tabular-nums}.age{font-weight:850}.age.warn{color:#a46300}.age.overdue{color:#a02a2a}
+    .mobile-cards{display:none}.lead-card{background:#fff;border:1px solid var(--line);border-radius:18px;padding:16px;margin-bottom:12px;cursor:pointer}.lead-card-top{display:flex;justify-content:space-between;gap:12px;align-items:flex-start}.lead-card h3{margin:0;font-size:1.05rem}.lead-card .code{color:#777;font-size:.8rem;font-weight:800}.lead-card-grid{display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-top:14px}.lead-card-grid div{background:#faf9f5;border-radius:12px;padding:10px}.lead-card-grid small{display:block;color:#777}.lead-card-grid strong{display:block;margin-top:3px}.quick-links{display:flex;gap:8px;margin-top:12px}.quick-links a{flex:1;text-align:center;text-decoration:none;padding:10px;border-radius:10px;border:1px solid var(--line);font-weight:850;color:#111;background:#fff}
+    dialog{width:min(860px,calc(100% - 24px));border:0;border-radius:22px;padding:0;box-shadow:0 30px 90px rgba(0,0,0,.25)}dialog::backdrop{background:rgba(0,0,0,.45)}
     .modal-head,.modal-body{padding:22px}.modal-head{display:flex;justify-content:space-between;align-items:center;border-bottom:1px solid var(--line)}.modal-head h2{font-size:1.7rem;margin:0}.modal-close{border:0;background:#eee;border-radius:12px;width:42px;height:42px;font-size:1.35rem}
     .detail-grid{display:grid;grid-template-columns:1fr 1fr;gap:14px}.detail{border:1px solid var(--line);border-radius:14px;padding:14px}.detail small{display:block;color:#777}.detail strong{display:block;margin-top:4px;word-break:break-word}
-    .edit-grid{display:grid;grid-template-columns:1fr 1fr;gap:14px;margin-top:18px}.edit-grid label{font-weight:800}.edit-grid input,.edit-grid select{margin-top:6px;background:#fff}.span2{grid-column:1/-1}
-    .actions{display:flex;gap:10px;flex-wrap:wrap;margin-top:18px}.timeline{margin-top:24px}.event{border-left:3px solid var(--gold);padding:4px 0 16px 14px;margin-left:5px}.event small{color:#777}.event code{white-space:pre-wrap;word-break:break-word;font-size:.78rem}
-    @media(max-width:780px){.admin-grid{grid-template-columns:1fr 1fr}.admin-top{align-items:flex-start}.detail-grid,.edit-grid{grid-template-columns:1fr}.span2{grid-column:auto}.lead-table-wrap{border-radius:14px}}
+    .contact-actions{display:flex;gap:10px;margin:0 0 18px}.contact-actions a{flex:1;text-align:center;text-decoration:none}
+    .edit-grid{display:grid;grid-template-columns:1fr 1fr;gap:14px;margin-top:18px}.edit-grid label{font-weight:800}.edit-grid input,.edit-grid select,.notes-box textarea{margin-top:6px;background:#fff}.span2{grid-column:1/-1}
+    .actions{display:flex;gap:10px;flex-wrap:wrap;margin-top:18px}.notes-box{margin-top:24px;border-top:1px solid var(--line);padding-top:20px}.notes-box textarea{width:100%;min-height:100px;resize:vertical}
+    .timeline{margin-top:24px}.event{border-left:3px solid var(--gold);padding:4px 0 16px 14px;margin-left:5px}.event small{color:#777}.event code{white-space:pre-wrap;word-break:break-word;font-size:.78rem}.event.note strong{color:#8b6a00}
+    @media(max-width:780px){
+      .admin-grid{grid-template-columns:1fr 1fr}.value-grid{grid-template-columns:1fr}.admin-top{align-items:flex-start}.detail-grid,.edit-grid{grid-template-columns:1fr}.span2{grid-column:auto}
+      .lead-table-wrap{display:none}.mobile-cards{display:block}.toolbar{display:grid;grid-template-columns:1fr 1fr}.toolbar input{grid-column:1/-1;min-width:0}.toolbar select,.toolbar button{width:100%}
+      .modal-head,.modal-body{padding:16px}.contact-actions{display:grid;grid-template-columns:1fr 1fr}
+    }
   </style>
 </head>
 <body>
@@ -37,7 +45,7 @@
 
 <main class="admin-shell">
   <div class="container">
-    <div class="admin-top"><div class="admin-title"><div class="eyebrow">Internal CRM</div><h1>Lead management</h1><p>Website leads, follow-ups, scheduling, and pipeline status.</p></div></div>
+    <div class="admin-top"><div class="admin-title"><div class="eyebrow">Internal CRM</div><h1>Lead management</h1><p>Website leads, estimates, follow-ups, scheduling, and pipeline status.</p></div></div>
     <div class="notice" id="notice"><strong>Connecting:</strong> loading protected lead data…</div>
 
     <section id="crm">
@@ -47,6 +55,11 @@
         <div class="metric"><span class="muted">Scheduled</span><b id="mScheduled">—</b></div>
         <div class="metric"><span class="muted">Completed</span><b id="mCompleted">—</b></div>
       </div>
+      <div class="value-grid">
+        <div class="value-card gold"><small>Open pipeline</small><b id="vOpen">—</b></div>
+        <div class="value-card"><small>Scheduled value</small><b id="vScheduled">—</b></div>
+        <div class="value-card"><small>Completed value</small><b id="vCompleted">—</b></div>
+      </div>
       <div class="toolbar">
         <input id="search" type="search" placeholder="Search name, lead ID, email, service…">
         <select id="statusFilter">
@@ -54,12 +67,14 @@
         </select>
         <button class="btn btn-outline" id="refreshBtn" type="button">Refresh</button>
       </div>
+
       <div class="lead-table-wrap">
         <table class="lead-table">
-          <thead><tr><th>Lead</th><th>Customer</th><th>Service</th><th>Status</th><th>Estimate</th><th>Submitted (AZ)</th><th>Next follow-up (AZ)</th></tr></thead>
-          <tbody id="leadRows"><tr><td colspan="7" class="empty">Loading leads…</td></tr></tbody>
+          <thead><tr><th>Lead</th><th>Customer</th><th>Service</th><th>Status</th><th>Estimate</th><th>Age</th><th>Submitted (AZ)</th><th>Next follow-up (AZ)</th></tr></thead>
+          <tbody id="leadRows"><tr><td colspan="8" class="empty">Loading leads…</td></tr></tbody>
         </table>
       </div>
+      <div class="mobile-cards" id="mobileCards"></div>
     </section>
   </div>
 </main>
@@ -67,6 +82,10 @@
 <dialog id="leadDialog">
   <div class="modal-head"><h2 id="modalTitle">Lead</h2><button class="modal-close" id="closeDialog" aria-label="Close">×</button></div>
   <div class="modal-body">
+    <div class="contact-actions">
+      <a class="btn btn-dark" id="callLead" href="#">Call customer</a>
+      <a class="btn btn-outline" id="emailLead" href="#">Email customer</a>
+    </div>
     <div class="detail-grid" id="leadDetails"></div>
     <div class="edit-grid">
       <label>Status<select id="editStatus"><option value="new">New</option><option value="contacted">Contacted</option><option value="estimate_sent">Estimate sent</option><option value="scheduled">Scheduled</option><option value="completed">Completed</option><option value="lost">Lost</option><option value="do_not_contact">Do not contact</option></select></label>
@@ -77,8 +96,16 @@
     </div>
     <div class="actions">
       <button class="btn btn-dark" id="saveLead" type="button">Save changes</button>
+      <button class="btn btn-outline" id="sendEstimate" type="button">Send estimate</button>
       <button class="btn btn-outline" id="sendFollowup" type="button">Send follow-up now</button>
     </div>
+
+    <div class="notes-box">
+      <h3>Internal note</h3>
+      <textarea id="noteText" placeholder="Add site conditions, customer preferences, pricing notes, or next steps…"></textarea>
+      <button class="btn btn-outline" id="saveNote" type="button">Add note</button>
+    </div>
+
     <div class="timeline"><h3>Lead history</h3><div id="eventList"></div></div>
   </div>
 </dialog>
@@ -95,15 +122,22 @@ const fmtAZ=v=>{if(!v)return"—";const d=new Date(v);if(Number.isNaN(d.getTime(
 const money=c=>c==null?"—":new Intl.NumberFormat("en-US",{style:"currency",currency:"USD"}).format(Number(c)/100);
 const toLocalInput=v=>{if(!v)return"";const d=new Date(v);if(Number.isNaN(d.getTime()))return"";const p=new Intl.DateTimeFormat("en-CA",{timeZone:AZ_TZ,year:"numeric",month:"2-digit",day:"2-digit",hour:"2-digit",minute:"2-digit",hourCycle:"h23"}).formatToParts(d).reduce((o,x)=>(o[x.type]=x.value,o),{});return p.year+"-"+p.month+"-"+p.day+"T"+p.hour+":"+p.minute};
 const azInputToISO=v=>{if(!v)return null;const [date,time]=v.split("T");const [y,m,d]=date.split("-").map(Number);const [hh,mm]=time.split(":").map(Number);return new Date(Date.UTC(y,m-1,d,hh+7,mm)).toISOString()};
+const leadAge=v=>{const d=new Date(v),ms=Date.now()-d.getTime();if(!Number.isFinite(ms))return{label:"—",cls:""};const h=Math.max(0,Math.floor(ms/3600000));if(h<24)return{label:h+"h",cls:h>=12?"warn":""};const days=Math.floor(h/24);return{label:days+"d",cls:days>=3?"overdue":"warn"}};
+const phoneHref=p=>"tel:"+String(p||"").replace(/[^\d+]/g,"");
+const eventDetail=e=>{if(!e.detail)return"";try{const d=JSON.parse(e.detail);if(e.event_type==="internal_note")return d.note||"";if(e.event_type==="estimate_sent")return "Estimate: "+money(d.amount_cents);if(e.event_type==="lead_updated")return Object.entries(d).filter(([,v])=>v!==null&&v!==undefined).map(([k,v])=>k.replaceAll("_"," ")+": "+v).join(" • ");if(e.event_type.includes("followup"))return d.subject||"";return Object.entries(d).map(([k,v])=>k.replaceAll("_"," ")+": "+v).join(" • ")}catch{return e.detail}};
 
 function setNotice(msg,type="ok"){const n=document.getElementById("notice");n.className="notice "+type;n.innerHTML=msg}
-function render(){
+function filteredLeads(){
   const q=document.getElementById("search").value.trim().toLowerCase(),f=document.getElementById("statusFilter").value;
-  const filtered=leads.filter(l=>(!f||l.status===f)&&(!q||[l.lead_code,l.name,l.email,l.phone,l.service].some(v=>String(v||"").toLowerCase().includes(q))));
-  const rows=document.getElementById("leadRows");
-  if(!filtered.length){rows.innerHTML='<tr><td colspan="7" class="empty">No leads match this view.</td></tr>';return}
-  rows.innerHTML=filtered.map(l=>'<tr data-id="'+l.id+'"><td><strong>'+escHtml(l.lead_code)+'</strong></td><td><strong>'+escHtml(l.name)+'</strong><br><span class="muted">'+escHtml(l.email)+'</span></td><td>'+escHtml(l.service)+'</td><td><span class="status '+escHtml(l.status)+'">'+escHtml(statusLabel(l.status))+'</span></td><td class="money">'+money(l.estimate_amount_cents)+'</td><td>'+fmtAZ(l.created_at)+'</td><td>'+fmtAZ(l.next_followup_at)+'</td></tr>').join("");
-  rows.querySelectorAll("tr[data-id]").forEach(r=>r.addEventListener("click",()=>openLead(Number(r.dataset.id))));
+  return leads.filter(l=>(!f||l.status===f)&&(!q||[l.lead_code,l.name,l.email,l.phone,l.service].some(v=>String(v||"").toLowerCase().includes(q))));
+}
+function render(){
+  const filtered=filteredLeads();
+  const rows=document.getElementById("leadRows"),cards=document.getElementById("mobileCards");
+  if(!filtered.length){rows.innerHTML='<tr><td colspan="8" class="empty">No leads match this view.</td></tr>';cards.innerHTML='<div class="empty">No leads match this view.</div>';return}
+  rows.innerHTML=filtered.map(l=>{const a=leadAge(l.created_at);return '<tr data-id="'+l.id+'"><td><strong>'+escHtml(l.lead_code)+'</strong></td><td><strong>'+escHtml(l.name)+'</strong><br><span class="muted">'+escHtml(l.email)+'</span></td><td>'+escHtml(l.service)+'</td><td><span class="status '+escHtml(l.status)+'">'+escHtml(statusLabel(l.status))+'</span></td><td class="money">'+money(l.estimate_amount_cents)+'</td><td><span class="age '+a.cls+'">'+a.label+'</span></td><td>'+fmtAZ(l.created_at)+'</td><td>'+fmtAZ(l.next_followup_at)+'</td></tr>'}).join("");
+  cards.innerHTML=filtered.map(l=>{const a=leadAge(l.created_at);return '<article class="lead-card" data-id="'+l.id+'"><div class="lead-card-top"><div><div class="code">'+escHtml(l.lead_code)+'</div><h3>'+escHtml(l.name)+'</h3></div><span class="status '+escHtml(l.status)+'">'+escHtml(statusLabel(l.status))+'</span></div><p>'+escHtml(l.service)+'</p><div class="lead-card-grid"><div><small>Estimate</small><strong>'+money(l.estimate_amount_cents)+'</strong></div><div><small>Lead age</small><strong class="age '+a.cls+'">'+a.label+'</strong></div><div><small>Next follow-up</small><strong>'+fmtAZ(l.next_followup_at)+'</strong></div><div><small>Submitted</small><strong>'+fmtAZ(l.created_at)+'</strong></div></div><div class="quick-links"><a href="'+phoneHref(l.phone)+'" onclick="event.stopPropagation()">Call</a><a href="mailto:'+encodeURIComponent(l.email)+'" onclick="event.stopPropagation()">Email</a></div></article>'}).join("");
+  document.querySelectorAll("[data-id]").forEach(r=>r.addEventListener("click",()=>openLead(Number(r.dataset.id))));
 }
 async function loadLeads(){
   setNotice("<strong>Connecting:</strong> loading protected lead data…","");
@@ -111,22 +145,24 @@ async function loadLeads(){
     const r=await fetch(API,{credentials:"same-origin",headers:{"Accept":"application/json"}});if(!r.ok)throw new Error("HTTP "+r.status);
     const data=await r.json();leads=data.leads||[];
     document.getElementById("mNew").textContent=data.metrics?.new??0;document.getElementById("mOpen").textContent=data.metrics?.open??0;document.getElementById("mScheduled").textContent=data.metrics?.scheduled??0;document.getElementById("mCompleted").textContent=data.metrics?.completed??0;
+    document.getElementById("vOpen").textContent=money(data.metrics?.open_value_cents??0);document.getElementById("vScheduled").textContent=money(data.metrics?.scheduled_value_cents??0);document.getElementById("vCompleted").textContent=money(data.metrics?.completed_value_cents??0);
     setNotice("<strong>Live:</strong> protected D1 lead data is connected.","ok");render();
-  }catch(e){setNotice("<strong>Connection error:</strong> "+escHtml(e.message)+". Refresh after the Worker deployment finishes.","error");document.getElementById("leadRows").innerHTML='<tr><td colspan="7" class="empty">Unable to load protected CRM data.</td></tr>'}
+  }catch(e){setNotice("<strong>Connection error:</strong> "+escHtml(e.message)+". Refresh after the Worker deployment finishes.","error");document.getElementById("leadRows").innerHTML='<tr><td colspan="8" class="empty">Unable to load protected CRM data.</td></tr>';document.getElementById("mobileCards").innerHTML='<div class="empty">Unable to load CRM data.</div>'}
 }
 async function openLead(id){
   try{
     const r=await fetch(API+"/"+id,{credentials:"same-origin",headers:{"Accept":"application/json"}});if(!r.ok)throw new Error("HTTP "+r.status);
     const data=await r.json();activeLead=data.lead;
     document.getElementById("modalTitle").textContent=activeLead.lead_code+" — "+activeLead.name;
+    document.getElementById("callLead").href=phoneHref(activeLead.phone);document.getElementById("emailLead").href="mailto:"+activeLead.email;
     document.getElementById("leadDetails").innerHTML=[
       ["Phone",activeLead.phone],["Email",activeLead.email],["ZIP",activeLead.zip],["Service",activeLead.service],
       ["Submitted (AZ)",fmtAZ(activeLead.created_at)],["Last contact (AZ)",fmtAZ(activeLead.last_contact_at)],
       ["Description",activeLead.description],["Photos",activeLead.photo_count]
     ].map(([a,b])=>'<div class="detail"><small>'+escHtml(a)+'</small><strong>'+escHtml(b??"—")+'</strong></div>').join("");
     document.getElementById("editStatus").value=activeLead.status;document.getElementById("editEstimate").value=activeLead.estimate_amount_cents==null?"":(Number(activeLead.estimate_amount_cents)/100).toFixed(2);
-    document.getElementById("editScheduled").value=toLocalInput(activeLead.scheduled_for);document.getElementById("editFollowup").value=toLocalInput(activeLead.next_followup_at);document.getElementById("editNurture").checked=!Number(activeLead.unsubscribed||0);
-    const events=data.events||[];document.getElementById("eventList").innerHTML=events.length?events.map(e=>'<div class="event"><strong>'+escHtml(e.event_type.replaceAll("_"," "))+'</strong><br><small>'+fmtAZ(e.created_at)+'</small>'+(e.detail?'<br><code>'+escHtml(e.detail)+'</code>':"")+'</div>').join(""):'<p class="muted">No history yet.</p>';
+    document.getElementById("editScheduled").value=toLocalInput(activeLead.scheduled_for);document.getElementById("editFollowup").value=toLocalInput(activeLead.next_followup_at);document.getElementById("editNurture").checked=!Number(activeLead.unsubscribed||0);document.getElementById("noteText").value="";
+    const events=data.events||[];document.getElementById("eventList").innerHTML=events.length?events.map(e=>'<div class="event '+(e.event_type==="internal_note"?"note":"")+'"><strong>'+escHtml(e.event_type.replaceAll("_"," "))+'</strong><br><small>'+fmtAZ(e.created_at)+'</small>'+(e.detail?'<br><span>'+escHtml(eventDetail(e))+'</span>':"")+'</div>').join(""):'<p class="muted">No history yet.</p>';
     document.getElementById("leadDialog").showModal();
   }catch(e){setNotice("<strong>Lead error:</strong> "+escHtml(e.message),"error")}
 }
@@ -137,12 +173,25 @@ async function saveLead(){
   const b=document.getElementById("saveLead");b.disabled=true;b.textContent="Saving…";
   try{const r=await fetch(API+"/"+activeLead.id,{method:"PATCH",credentials:"same-origin",headers:{"Content-Type":"application/json","Accept":"application/json"},body:JSON.stringify(payload)});const d=await r.json();if(!r.ok)throw new Error(d.error||("HTTP "+r.status));document.getElementById("leadDialog").close();await loadLeads()}catch(e){alert("Save failed: "+e.message)}finally{b.disabled=false;b.textContent="Save changes"}
 }
+async function sendEstimate(){
+  if(!activeLead)return;
+  const raw=document.getElementById("editEstimate").value, cents=Math.round(Number(raw)*100);
+  if(!raw||!Number.isFinite(cents)||cents<=0){alert("Enter an estimate amount first.");return}
+  if(!confirm("Send a "+money(cents)+" estimate to "+activeLead.email+"?"))return;
+  const b=document.getElementById("sendEstimate");b.disabled=true;b.textContent="Sending…";
+  try{const r=await fetch(API+"/"+activeLead.id+"/estimate",{method:"POST",credentials:"same-origin",headers:{"Content-Type":"application/json","Accept":"application/json"},body:JSON.stringify({estimate_amount_cents:cents})});const d=await r.json();if(!r.ok)throw new Error(d.error||("HTTP "+r.status));document.getElementById("leadDialog").close();await loadLeads();setNotice("<strong>Estimate sent:</strong> "+money(cents)+" to "+escHtml(activeLead.email)+".","ok")}catch(e){alert("Estimate failed: "+e.message)}finally{b.disabled=false;b.textContent="Send estimate"}
+}
+async function saveNote(){
+  if(!activeLead)return;const note=document.getElementById("noteText").value.trim();if(!note){alert("Enter a note first.");return}
+  const b=document.getElementById("saveNote");b.disabled=true;b.textContent="Adding…";
+  try{const r=await fetch(API+"/"+activeLead.id+"/note",{method:"POST",credentials:"same-origin",headers:{"Content-Type":"application/json","Accept":"application/json"},body:JSON.stringify({note})});const d=await r.json();if(!r.ok)throw new Error(d.error||("HTTP "+r.status));await openLead(activeLead.id)}catch(e){alert("Note failed: "+e.message)}finally{b.disabled=false;b.textContent="Add note"}
+}
 async function sendFollowup(){
   if(!activeLead)return;if(!confirm("Send a follow-up email to "+activeLead.email+" now?"))return;
   const b=document.getElementById("sendFollowup");b.disabled=true;b.textContent="Sending…";
   try{const r=await fetch(API+"/"+activeLead.id+"/followup",{method:"POST",credentials:"same-origin",headers:{"Accept":"application/json"}});const d=await r.json();if(!r.ok)throw new Error(d.error||("HTTP "+r.status));document.getElementById("leadDialog").close();await loadLeads();setNotice("<strong>Sent:</strong> follow-up email delivered to "+escHtml(activeLead.email)+".","ok")}catch(e){alert("Follow-up failed: "+e.message)}finally{b.disabled=false;b.textContent="Send follow-up now"}
 }
-document.getElementById("search").addEventListener("input",render);document.getElementById("statusFilter").addEventListener("change",render);document.getElementById("refreshBtn").addEventListener("click",loadLeads);document.getElementById("closeDialog").addEventListener("click",()=>document.getElementById("leadDialog").close());document.getElementById("saveLead").addEventListener("click",saveLead);document.getElementById("sendFollowup").addEventListener("click",sendFollowup);
+document.getElementById("search").addEventListener("input",render);document.getElementById("statusFilter").addEventListener("change",render);document.getElementById("refreshBtn").addEventListener("click",loadLeads);document.getElementById("closeDialog").addEventListener("click",()=>document.getElementById("leadDialog").close());document.getElementById("saveLead").addEventListener("click",saveLead);document.getElementById("sendEstimate").addEventListener("click",sendEstimate);document.getElementById("saveNote").addEventListener("click",saveNote);document.getElementById("sendFollowup").addEventListener("click",sendFollowup);
 loadLeads();
 </script>
 </body>
