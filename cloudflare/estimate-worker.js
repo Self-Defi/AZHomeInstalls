@@ -1,4 +1,5 @@
 const MAX_TOTAL_BYTES = 4 * 1024 * 1024;
+import { outboundApi } from "./outbound.js";
 const ALLOWED_TYPES = new Set(["image/jpeg", "image/png", "image/webp"]);
 
 function esc(value = "") {
@@ -821,6 +822,9 @@ export default {
 
   async fetch(request, env) {
     const url = new URL(request.url);
+    if (url.pathname.startsWith("/api/admin/outbound/")) {
+      return outboundApi(request, env, url);
+    }
 
     if (url.pathname === "/api/estimate-response") {
       try {
