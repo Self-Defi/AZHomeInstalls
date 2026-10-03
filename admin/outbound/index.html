@@ -47,7 +47,7 @@ async function refresh(){
  $('prospects').replaceChildren();
  for(const p of list.prospects){
   const card=document.createElement('div');card.className='prospect';
-  card.append(text('strong',p.organization+' — '+p.stage),text('p','Wave '+p.wave_number+' · Priority '+p.priority+' · '+p.email+' · '+p.city+' · '+p.segment),text('p',(p.vendor_friendly?'Vendor-friendly · ':'')+(p.personalization_hook||p.fit_reason)));
+  card.append(text('strong',p.organization+' — '+p.stage),text('p','Wave '+p.wave_number+(p.launch_day?' · Day '+p.launch_day+' · Send #'+p.send_order:'')+' · Priority '+p.priority+' · '+p.email+' · '+p.city+' · '+p.segment),text('p',(p.vendor_friendly?'Vendor-friendly · ':'')+(p.personalization_hook||p.fit_reason)));
   const link=document.createElement('a');link.href=p.source_url;link.textContent='View public source';link.target='_blank';link.rel='noopener noreferrer';card.append(link);
   const actions=document.createElement('div');actions.className='actions';
   for(const [label,action] of [['Approve & queue','approve'],['Record reply & stop','reply'],['Mark qualified','qualify'],['Link estimate request','link-lead'],['Do not contact','suppress']]){
