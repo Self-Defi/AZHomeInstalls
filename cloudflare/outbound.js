@@ -110,7 +110,7 @@ export async function outboundApi(request,env,url) {
     await stopForReply(env,id);
     await audit(env,id,'reply_recorded',{manual:true}); return json({ok:true});
    }
-   if(action==='link-lead') return linkLead(env,p,body);
+   if(action==='link-lead') return await linkLead(env,p,body);
    if(action==='qualify') {
     if(p.stage!=='replied') return json({error:'Record a reply before qualification'},409);
     await env.LEADS_DB.prepare("UPDATE outbound_prospects SET stage='qualified',updated_at=? WHERE id=? AND stage='replied'").bind(now(),id).run();
@@ -129,7 +129,7 @@ export async function outboundApi(request,env,url) {
     await audit(env,id,'approved',{reviewer}); return json({ok:true});
    }
   }
-  if(resource==='events' && request.method==='POST') return recordEvent(env,await request.json(),suppress);
+  if(resource==='events' && request.method==='POST') return await recordEvent(env,await request.json(),suppress);
   if(resource==='settings' && request.method==='POST') {
    const body=await request.json(), cap=Number(body.daily_cap);
    if(!Number.isInteger(cap)||cap<1||cap>20) return json({error:'Daily cap must be 1–20'},400);
