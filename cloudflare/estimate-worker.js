@@ -1,5 +1,5 @@
 const MAX_TOTAL_BYTES = 4 * 1024 * 1024;
-import { outboundApi } from "./outbound.js";
+import { outboundApi, syncOutboundProvider } from "./outbound.js";
 const ALLOWED_TYPES = new Set(["image/jpeg", "image/png", "image/webp"]);
 
 function esc(value = "") {
@@ -817,7 +817,12 @@ async function handleEstimateResponseApi(request,env,url){
 
 export default {
   async scheduled(event, env, ctx) {
-    ctx.waitUntil(processDueFollowups(env));
+    ctx.waitUntil(Promise.all([
+      processDueFollowups(env),
+      syncOutboundProvider(env).catch(error => {
+        console.error("Outbound provider sync failed", { message: error?.message || String(error) });
+      })
+    ]));
   },
 
   async fetch(request, env) {
