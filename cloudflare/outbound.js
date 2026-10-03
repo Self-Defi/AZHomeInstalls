@@ -1,7 +1,7 @@
 import { unsubscribe, unsubscribeUrl, recordEvent, stopForReply, linkLead, phoenixDate } from './outbound-controls.js';
 // Pilot foundation: no provider adapter and no live send path.
 const SEGMENTS = new Set(['property_manager','design_studio','home_stager','realtor','moving_company','builder_new_community']);
-export const OFFSETS = [0,3,9];
+export const OFFSETS = [0,7,17];
 export const normalizeEmail = value => String(value || '').trim().toLowerCase();
 const validEmail = value => /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(value);
 const now = () => new Date().toISOString();
@@ -136,7 +136,7 @@ export async function outboundApi(request,env,url) {
     await env.LEADS_DB.batch([
      env.LEADS_DB.prepare("UPDATE outbound_prospects_v2 SET approved_at=?,reviewed_by=?,stage='queued',updated_at=? WHERE id=? AND stage='prospect'").bind(at,reviewer,at,id),
      env.LEADS_DB.prepare("INSERT OR IGNORE INTO outbound_enrollments_v2(prospect_id,created_at) VALUES(?,?)").bind(id,at),
-     ...OFFSETS.map((offset,step)=>env.LEADS_DB.prepare("INSERT OR IGNORE INTO outbound_messages_v2(enrollment_id,step,day_offset,idempotency_key) SELECT id,?,?,? FROM outbound_enrollments_v2 WHERE prospect_id=?").bind(step,offset,'pilot-v1:'+id+':'+step,id))
+     ...OFFSETS.map((offset,step)=>env.LEADS_DB.prepare("INSERT OR IGNORE INTO outbound_messages_v2(enrollment_id,step,day_offset,idempotency_key) SELECT id,?,?,? FROM outbound_enrollments_v2 WHERE prospect_id=?").bind(step,offset,'wave-v1:'+id+':'+step,id))
     ]);
     await audit(env,id,'approved',{reviewer}); return json({ok:true});
    }
@@ -154,7 +154,7 @@ export async function outboundApi(request,env,url) {
   }
   if(resource==='preview' && request.method==='GET') return json({mode:'dry_run',messages:await preview(env)});
   if(resource==='metrics' && request.method==='GET') {
-   const {results=[]}=await env.LEADS_DB.prepare('SELECT segment,stage,count(*) AS count FROM outbound_prospects_v2 GROUP BY segment,stage').all();
+   const {results=[]}=await env.LEADS_DB.prepare('SELECT wave_number,segment,stage,count(*) AS count FROM outbound_prospects_v2 GROUP BY wave_number,segment,stage ORDER BY wave_number,segment,stage').all();
    const messages=await env.LEADS_DB.prepare("SELECT count(*) AS queued FROM outbound_messages_v2 WHERE status='queued'").first();
    const suppressed=await env.LEADS_DB.prepare('SELECT count(*) AS count FROM email_suppressions').first();
    const funnel=await env.LEADS_DB.prepare("SELECT (SELECT count(*) FROM outbound_messages_v2 WHERE sent_at IS NOT NULL) AS sent,(SELECT count(*) FROM outbound_messages_v2 WHERE delivered_at IS NOT NULL) AS delivered,(SELECT count(DISTINCT prospect_id) FROM outbound_events_v2 WHERE event_type IN ('reply_recorded','reply')) AS replied,(SELECT count(DISTINCT lead_id) FROM outbound_lead_links_v2) AS estimate_requested,(SELECT count(DISTINCT l.id) FROM outbound_lead_links_v2 x JOIN leads l ON l.id=x.lead_id WHERE l.status IN ('accepted','scheduled','completed')) AS estimate_accepted,(SELECT count(DISTINCT l.id) FROM outbound_lead_links_v2 x JOIN leads l ON l.id=x.lead_id WHERE l.status='completed') AS install_completed").first();
