@@ -1,5 +1,5 @@
 import { unsubscribe, unsubscribeUrl, recordEvent, stopForReply, linkLead, phoenixDate } from './outbound-controls.js';
-import { outboundProviderStatus, addProspectToInstantly, webhookAuthorized, normalizeInstantlyWebhook } from './outbound-provider.js';
+import { outboundProviderStatus, addProspectToInstantly, listInstantlyLeads, webhookAuthorized, normalizeInstantlyWebhook } from './outbound-provider.js';
 // Pilot foundation: no provider adapter and no live send path.
 const SEGMENTS = new Set(['property_manager','design_studio','home_stager','realtor','moving_company','builder_new_community']);
 export const OFFSETS = [0,7,17];
@@ -136,6 +136,48 @@ async function preview(env) {
   "SELECT p.*,m.id AS message_id,m.step,m.due_at FROM outbound_messages_v2 m JOIN outbound_enrollments_v2 e ON e.id=m.enrollment_id JOIN outbound_prospects_v2 p ON p.id=e.prospect_id LEFT JOIN email_suppressions s ON s.email_normalized=p.email_normalized WHERE m.status='queued' AND e.status='queued' AND p.approved_at IS NOT NULL AND p.last_reply_at IS NULL AND s.email_normalized IS NULL AND m.step=0 ORDER BY m.id LIMIT 20").all();
  return Promise.all(results.map(async p=>({prospect_id:p.id,message_id:p.message_id,...renderTemplate(p,Number(p.step),{address:env.OUTBOUND_MAILING_ADDRESS,optout:env.OUTBOUND_UNSUBSCRIBE_SECRET ? 'Unsubscribe: '+await unsubscribeUrl(env,p) : undefined})})));
 }
+
+export async function syncOutboundProvider(env) {
+ if(!env.LEADS_DB) return {ok:false,reason:"database_unavailable"};
+ const provider=outboundProviderStatus(env);
+ if(!provider.configured) return {ok:false,reason:"provider_not_configured",blockers:provider.blockers};
+
+ const {results:prospects=[]}=await env.LEADS_DB.prepare(
+  "SELECT id,email_normalized,last_reply_at,provider_lead_id,provider_status FROM outbound_prospects_v2 WHERE provider='instantly' AND provider_campaign_id=? AND stage NOT IN ('do_not_contact','converted') ORDER BY id LIMIT 100"
+ ).bind(String(env.INSTANTLY_CAMPAIGN_ID||"")).all();
+
+ if(!prospects.length) return {ok:true,checked:0,replies:0};
+ const byEmail=new Map(prospects.map(p=>[p.email_normalized,p]));
+ const data=await listInstantlyLeads(env,prospects.map(p=>p.email_normalized));
+ const items=Array.isArray(data?.items)?data.items:[];
+ let replies=0,updated=0;
+
+ for(const lead of items){
+  const email=normalizeEmail(lead?.email);
+  const p=byEmail.get(email);
+  if(!p) continue;
+  const at=now();
+  const verification=lead?.verification_status==null?null:String(lead.verification_status);
+  const lastReply=lead?.timestamp_last_reply?String(lead.timestamp_last_reply):null;
+  const replyCount=Number(lead?.email_reply_count||0);
+  const lastContact=lead?.timestamp_last_contact?String(lead.timestamp_last_contact):null;
+
+  await env.LEADS_DB.prepare(
+   "UPDATE outbound_prospects_v2 SET provider_lead_id=COALESCE(provider_lead_id,?),verification_status=COALESCE(?,verification_status),provider_status=?,updated_at=? WHERE id=?"
+  ).bind(String(lead?.id||"")||null,verification,lastContact?"contacted":"synced",at,p.id).run();
+  updated++;
+
+  if(replyCount>0 && lastReply && (!p.last_reply_at || Date.parse(lastReply)>Date.parse(p.last_reply_at))){
+   await stopForReply(env,p.id,lastReply);
+   await env.LEADS_DB.prepare(
+    "INSERT INTO outbound_events_v2(prospect_id,external_event_id,event_type,detail,created_at) VALUES(?,?,?,?,?)"
+   ).bind(p.id,"instantly-reply:"+p.id+":"+lastReply,"reply",JSON.stringify({provider:"instantly",source:"hourly_poll",reply_count:replyCount}),lastReply).run();
+   replies++;
+  }
+ }
+ return {ok:true,checked:prospects.length,matched:items.length,updated,replies};
+}
+
 export async function outboundApi(request,env,url) {
  if(url.pathname==='/api/admin/outbound/unsubscribe') return unsubscribe(request,env,url,suppress);
  if(url.pathname==='/api/admin/outbound/provider-webhook') {
