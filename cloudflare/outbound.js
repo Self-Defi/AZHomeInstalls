@@ -150,9 +150,20 @@ export async function outboundApi(request,env,url) {
   const at=now();
   if(event.event_type==="reply") await stopForReply(env,p.id,at);
   if(["hard_bounce","unsubscribe"].includes(event.event_type)) await suppress(env,p.email_normalized,event.event_type,"instantly_webhook");
-  if(event.event_type==="sent") await env.LEADS_DB.prepare("UPDATE outbound_prospects_v2 SET provider_status='sent',updated_at=? WHERE id=?").bind(at,p.id).run();
+  if(event.event_type==="sent") {
+   const localStep=event.step==null?null:Math.max(0,Number(event.step)-1);
+   await env.LEADS_DB.prepare("UPDATE outbound_prospects_v2 SET provider_status='sent',updated_at=? WHERE id=?").bind(at,p.id).run();
+   if(localStep!=null) {
+    await env.LEADS_DB.prepare("UPDATE outbound_messages_v2 SET status='sent',sent_at=COALESCE(sent_at,?),provider_message_id=COALESCE(provider_message_id,?) WHERE enrollment_id IN (SELECT id FROM outbound_enrollments_v2 WHERE prospect_id=?) AND step=?")
+     .bind(at,event.provider_message_id,p.id,localStep).run();
+    if(localStep===0) {
+     const d=phoenixDate(new Date(at));
+     await env.LEADS_DB.prepare("UPDATE outbound_daily_limits SET sent=sent+1 WHERE phoenix_date=?").bind(d).run();
+    }
+   }
+  }
   await env.LEADS_DB.prepare("INSERT INTO outbound_events_v2(prospect_id,external_event_id,event_type,detail,created_at) VALUES(?,?,?,?,?)")
-   .bind(p.id,event.external_event_id,event.event_type,JSON.stringify({provider:"instantly",provider_event_type:event.provider_event_type,provider_message_id:event.provider_message_id}),at).run();
+   .bind(p.id,event.external_event_id,event.event_type,JSON.stringify({provider:"instantly",provider_event_type:event.provider_event_type,provider_message_id:event.provider_message_id,step:event.step}),at).run();
   return json({ok:true});
  }
  if(!await authorized(request,env)) return json({error:'Outbound authorization required'},401);
