@@ -265,12 +265,24 @@ export async function outboundApi(request,env,url) {
    }
   }
   if(resource==='events' && request.method==='POST') return await recordEvent(env,await request.json(),suppress);
-  if(resource==='settings' && request.method==='POST') {
-   const body=await request.json(), cap=Number(body.daily_cap);
-   if(!Number.isInteger(cap)||cap<1||cap>20) return json({error:'Daily cap must be 1–20'},400);
-   await env.LEADS_DB.prepare('UPDATE outbound_settings SET daily_cap=?,paused=1 WHERE id=1').bind(cap).run();
-   await audit(env,null,'settings_changed',{daily_cap:cap,paused:true});return json({ok:true,paused:true});
-  }
+  if (resource === "settings" && request.method === "POST") {
+      const body = await request.json(), cap = Number(body.daily_cap);
+      if (!Number.isInteger(cap) || cap < 1 || cap > 20) return json({ error: "Daily cap must be 1–20" }, 400);
+      const requestedPaused = body.paused === false ? 0 : 1;
+      if(requestedPaused===0){
+        const provider=outboundProviderStatus(env);
+        const blockers=[
+          ...provider.blockers,
+          ...(!env.OUTBOUND_UNSUBSCRIBE_SECRET?["Opt-out signing secret missing"]:[]),
+          ...(!env.OUTBOUND_MAILING_ADDRESS?["Mailing address missing"]:[]),
+          ...(env.OUTBOUND_MAILBOX_APPROVED!=="true"?["Mailbox approval pending"]:[])
+        ];
+        if(blockers.length) return json({error:"OAS cannot be activated until all readiness gates pass",blockers},409);
+      }
+      await env.LEADS_DB.prepare("UPDATE outbound_settings SET daily_cap=?,paused=? WHERE id=1").bind(cap,requestedPaused).run();
+      await audit(env, null, "settings_changed", { daily_cap: cap, paused:Boolean(requestedPaused) });
+      return json({ ok:true, paused:Boolean(requestedPaused) });
+    }
   if(resource==='queue' && request.method==='GET') {
    const {results=[]}=await env.LEADS_DB.prepare('SELECT m.id,m.step,m.day_offset,m.status,m.due_at,m.sent_at,m.delivered_at,p.organization,p.stage,e.stop_reason FROM outbound_messages_v2 m JOIN outbound_enrollments_v2 e ON e.id=m.enrollment_id JOIN outbound_prospects_v2 p ON p.id=e.prospect_id ORDER BY m.id DESC LIMIT 500').all();
    return json({messages:results,phoenix_date:phoenixDate(),live_sending:false});
