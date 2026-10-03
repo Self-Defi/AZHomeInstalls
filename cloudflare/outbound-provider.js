@@ -92,6 +92,7 @@ export function normalizeInstantlyWebhook(body) {
     provider_event_type: event,
     email,
     provider_message_id: providerMessageId,
+    step: Number.isFinite(Number(body?.step)) ? Number(body.step) : null,
     external_event_id: externalId,
     raw: body
   };
