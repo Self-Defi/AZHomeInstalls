@@ -9,7 +9,7 @@ body{font:16px system-ui;background:#f7f5ef;color:#171717;margin:0}main{max-widt
 <label>Outbound credential<input id="token" type="password" autocomplete="off"></label><label>Reviewer name<input id="reviewer" autocomplete="name"></label>
 <button id="connect">Connect</button><p id="feedback" role="status"></p></section>
 <section class="panel"><h2>Readiness</h2><div id="readiness">Connect to view readiness.</div></section>
-<section class="panel"><h2>Daily outreach limit</h2><p>Includes initial messages and follow-ups. Saving keeps sending paused.</p><label>Daily cap<input id="dailyCap" type="number" min="1" max="20" value="5"></label><button id="saveCap">Save limit</button></section>
+<section class="panel"><h2>Daily new-prospect limit</h2><p>Controls new prospect launches only. Instantly will manage sequence follow-ups. Saving keeps sending paused.</p><label>Daily cap<input id="dailyCap" type="number" min="1" max="20" value="5"></label><button id="saveCap">Save limit</button></section>
 <section class="panel"><h2>Add a public business contact</h2><form id="prospectForm"><div class="grid">
 <label>Organization<input name="organization" required maxlength="1000"></label><label>Segment<select name="segment"><option value="property_manager">Property manager</option><option value="design_studio">Design studio</option><option value="home_stager">Home stager</option><option value="realtor">Realtor / real-estate team</option><option value="moving_company">Moving company</option><option value="builder_new_community">Builder / new community</option></select></label>
 <label>Contact name<input name="contact_name" maxlength="200"></label><label>Role<input name="role" maxlength="200"></label>
@@ -50,8 +50,9 @@ async function refresh(){
   card.append(text('strong',p.organization+' — '+p.stage),text('p','Wave '+p.wave_number+(p.launch_day?' · Day '+p.launch_day+' · Send #'+p.send_order:'')+' · Priority '+p.priority+' · '+p.email+' · '+p.city+' · '+p.segment),text('p',(p.vendor_friendly?'Vendor-friendly · ':'')+(p.personalization_hook||p.fit_reason)));
   const link=document.createElement('a');link.href=p.source_url;link.textContent='View public source';link.target='_blank';link.rel='noopener noreferrer';card.append(link);
   const actions=document.createElement('div');actions.className='actions';
-  for(const [label,action] of [['Approve & queue','approve'],['Record reply & stop','reply'],['Mark qualified','qualify'],['Link estimate request','link-lead'],['Do not contact','suppress']]){
+  for(const [label,action] of [['Re-check solicitation','preflight'],['Approve & queue','approve'],['Record reply & stop','reply'],['Mark qualified','qualify'],['Link estimate request','link-lead'],['Do not contact','suppress']]){
    if(action==='approve' && p.stage!=='prospect')continue;
+   if(action==='preflight' && p.stage==='do_not_contact')continue;
    if(p.stage==='do_not_contact')continue;
    if(action==='qualify' && p.stage!=='replied')continue;
    const b=text('button',label);b.onclick=()=>perform(async()=>{const body={reviewed_by:$('reviewer').value};if(action==='link-lead'){const value=prompt('Existing CRM lead ID for this confirmed estimate request:');if(value===null)return;body.lead_id=Number(value);}await api('prospects/'+p.id+'/'+action,'POST',body);feedback(label+' completed.');await refresh()});actions.append(b);
