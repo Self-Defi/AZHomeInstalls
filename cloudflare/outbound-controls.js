@@ -18,7 +18,7 @@ export async function unsubscribe(request,env,url,suppress) {
  try {
   const token=url.searchParams.get('token')||'', match=/^([1-9][0-9]*)\.([a-f0-9]{64})$/.exec(token);
   if(!match) return response({error:'Invalid opt-out link'},400);
-  const p=await env.LEADS_DB.prepare('SELECT * FROM outbound_prospects WHERE id=?').bind(Number(match[1])).first();
+  const p=await env.LEADS_DB.prepare('SELECT * FROM outbound_prospects_v2 WHERE id=?').bind(Number(match[1])).first();
   if(!p) return response({error:'Invalid opt-out link'},400);
   const bytes=new Uint8Array(match[2].match(/../g).map(x=>parseInt(x,16)));
   if(!await crypto.subtle.verify('HMAC',await key(env),bytes,enc.encode('ahi-optout-v1:'+p.id+':'+p.email_normalized))) return response({error:'Invalid opt-out link'},400);
@@ -40,27 +40,27 @@ export function followupDue(sentAt,offset) {
 }
 export async function stopForReply(env,id,at=stamp()) {
  await env.LEADS_DB.batch([
-  env.LEADS_DB.prepare("UPDATE outbound_prospects SET stage=CASE WHEN stage IN ('do_not_contact','converted','qualified') THEN stage ELSE 'replied' END,last_reply_at=?,updated_at=? WHERE id=?").bind(at,at,id),
-  env.LEADS_DB.prepare("UPDATE outbound_enrollments SET status='stopped',stop_reason='reply',last_reply_at=? WHERE prospect_id=?").bind(at,id),
-  env.LEADS_DB.prepare("UPDATE outbound_messages SET status='cancelled' WHERE status IN ('queued','claimed') AND enrollment_id IN (SELECT id FROM outbound_enrollments WHERE prospect_id=?)").bind(id)
+  env.LEADS_DB.prepare("UPDATE outbound_prospects_v2 SET stage=CASE WHEN stage IN ('do_not_contact','converted','qualified') THEN stage ELSE 'replied' END,last_reply_at=?,updated_at=? WHERE id=?").bind(at,at,id),
+  env.LEADS_DB.prepare("UPDATE outbound_enrollments_v2 SET status='stopped',stop_reason='reply',last_reply_at=? WHERE prospect_id=?").bind(at,id),
+  env.LEADS_DB.prepare("UPDATE outbound_messages_v2 SET status='cancelled' WHERE status IN ('queued','claimed') AND enrollment_id IN (SELECT id FROM outbound_enrollments_v2 WHERE prospect_id=?)").bind(id)
  ]);
 }
 export async function recordEvent(env,body,suppress) {
  const allowed=new Set(['reply','auto_reply','delivered','hard_bounce','complaint','unsubscribe']);
  const external=String(body.external_event_id||'').trim();
  if(!allowed.has(body.event_type)||!external||external.length>200) return response({error:'Valid event type and unique external_event_id required'},400);
- const m=await env.LEADS_DB.prepare('SELECT m.*,p.id AS prospect_id,p.email_normalized FROM outbound_messages m JOIN outbound_enrollments e ON e.id=m.enrollment_id JOIN outbound_prospects p ON p.id=e.prospect_id WHERE m.id=?').bind(Number(body.message_id)||0).first();
+ const m=await env.LEADS_DB.prepare('SELECT m.*,p.id AS prospect_id,p.email_normalized FROM outbound_messages_v2 m JOIN outbound_enrollments_v2 e ON e.id=m.enrollment_id JOIN outbound_prospects_v2 p ON p.id=e.prospect_id WHERE m.id=?').bind(Number(body.message_id)||0).first();
  if(!m) return response({error:'Correlated outbound message required'},404);
  // Effects are idempotent and applied before recording receipt, so a failed write can be retried.
- if(await env.LEADS_DB.prepare('SELECT 1 FROM outbound_events WHERE external_event_id=?').bind(external).first()) return response({ok:true,duplicate:true});
+ if(await env.LEADS_DB.prepare('SELECT 1 FROM outbound_events_v2 WHERE external_event_id=?').bind(external).first()) return response({ok:true,duplicate:true});
  if(['reply','auto_reply'].includes(body.event_type)) await stopForReply(env,m.prospect_id);
  if(['hard_bounce','complaint','unsubscribe'].includes(body.event_type)) await suppress(env,m.email_normalized,body.event_type,'event_bridge');
  if(body.event_type==='delivered') {
   if(!m.sent_at) return response({error:'Cannot mark an unsent message delivered'},409);
-  await env.LEADS_DB.prepare('UPDATE outbound_messages SET delivered_at=COALESCE(delivered_at,?) WHERE id=?').bind(stamp(),m.id).run();
+  await env.LEADS_DB.prepare('UPDATE outbound_messages_v2 SET delivered_at=COALESCE(delivered_at,?) WHERE id=?').bind(stamp(),m.id).run();
  }
  if(body.event_type==='complaint') await env.LEADS_DB.prepare('UPDATE outbound_settings SET paused=1 WHERE id=1').run();
- await env.LEADS_DB.prepare('INSERT OR IGNORE INTO outbound_events(prospect_id,message_id,external_event_id,event_type,detail,created_at) VALUES(?,?,?,?,?,?)').bind(m.prospect_id,m.id,external,body.event_type,JSON.stringify({source:'authenticated_bridge'}),stamp()).run();
+ await env.LEADS_DB.prepare('INSERT OR IGNORE INTO outbound_events_v2(prospect_id,message_id,external_event_id,event_type,detail,created_at) VALUES(?,?,?,?,?,?)').bind(m.prospect_id,m.id,external,body.event_type,JSON.stringify({source:'authenticated_bridge'}),stamp()).run();
  return response({ok:true});
 }
 export async function linkLead(env,p,body) {
@@ -71,8 +71,8 @@ export async function linkLead(env,p,body) {
  const at=stamp();
  await stopForReply(env,p.id,at);
  await env.LEADS_DB.batch([
-  env.LEADS_DB.prepare("INSERT OR IGNORE INTO outbound_lead_links(prospect_id,lead_id,attribution_method,created_at) VALUES(?,?,'manual_partner_referral',?)").bind(p.id,leadId,at),
-  env.LEADS_DB.prepare("UPDATE outbound_prospects SET stage='converted',updated_at=? WHERE id=? AND stage!='do_not_contact'").bind(at,p.id)
+  env.LEADS_DB.prepare("INSERT OR IGNORE INTO outbound_lead_links_v2(prospect_id,lead_id,attribution_method,created_at) VALUES(?,?,'manual_partner_referral',?)").bind(p.id,leadId,at),
+  env.LEADS_DB.prepare("UPDATE outbound_prospects_v2 SET stage='converted',updated_at=? WHERE id=? AND stage!='do_not_contact'").bind(at,p.id)
  ]);
  return response({ok:true,lead_id:leadId});
 }
