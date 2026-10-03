@@ -6,7 +6,7 @@ export function outboundProviderStatus(env) {
   if (provider !== "instantly") blockers.push("Unsupported outbound provider");
   if (!env.INSTANTLY_API_KEY) blockers.push("Instantly API v2 key missing");
   if (!env.INSTANTLY_CAMPAIGN_ID) blockers.push("Instantly campaign ID missing");
-  if (!env.OUTBOUND_WEBHOOK_SECRET) blockers.push("Outbound webhook secret missing");
+  // Webhooks are optional. Growth-plan workspaces can synchronize via hourly API polling.
   return {
     provider,
     configured: blockers.length === 0,
@@ -96,4 +96,19 @@ export function normalizeInstantlyWebhook(body) {
     external_event_id: externalId,
     raw: body
   };
+}
+
+export async function listInstantlyLeads(env, contacts = []) {
+  const campaign = String(env.INSTANTLY_CAMPAIGN_ID || "").trim();
+  if (!campaign) throw new Error("Instantly campaign ID is not configured");
+  const body = {
+    campaign,
+    limit: 100,
+    distinct_contacts: true
+  };
+  if (contacts.length) body.contacts = contacts.slice(0, 100);
+  return instantlyRequest(env, "/leads/list", {
+    method: "POST",
+    body: JSON.stringify(body)
+  });
 }
