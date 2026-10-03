@@ -1,4 +1,5 @@
 import { unsubscribe, unsubscribeUrl, recordEvent, stopForReply, linkLead, phoenixDate } from './outbound-controls.js';
+import { outboundProviderStatus, addProspectToInstantly, webhookAuthorized, normalizeInstantlyWebhook } from './outbound-provider.js';
 // Pilot foundation: no provider adapter and no live send path.
 const SEGMENTS = new Set(['property_manager','design_studio','home_stager','realtor','moving_company','builder_new_community']);
 export const OFFSETS = [0,7,17];
@@ -15,6 +16,58 @@ function publicUrl(value) {
   return true;
  } catch { return false; }
 }
+const NO_SOLICIT_PATTERNS = [
+ /\bno\s+solicitors?\b/i,
+ /\bno\s+solicitation\b/i,
+ /\bno\s+vendor\s+solicitation\b/i,
+ /\bdo\s+not\s+solicit\b/i,
+ /\bno\s+sales\s+solicitation\b/i
+];
+
+function htmlToText(html) {
+ return String(html || "")
+  .replace(/<script[\s\S]*?<\/script>/gi," ")
+  .replace(/<style[\s\S]*?<\/style>/gi," ")
+  .replace(/<[^>]+>/g," ")
+  .replace(/&nbsp;/gi," ")
+  .replace(/&amp;/gi,"&")
+  .replace(/\s+/g," ")
+  .trim();
+}
+
+async function solicitationPreflight(env,p) {
+ const checkedAt=now();
+ let status="manual_required", note="";
+ try {
+  const response=await fetch(p.source_url,{
+   method:"GET",
+   redirect:"follow",
+   headers:{"User-Agent":"AZHomeInstalls-Outreach-Compliance/1.0"}
+  });
+  const type=String(response.headers.get("content-type")||"").toLowerCase();
+  if(!response.ok) {
+   note="Source page returned HTTP "+response.status;
+  } else if(!type.includes("text/html") && !type.includes("text/plain")) {
+   note="Source is not machine-readable HTML/text; manual re-check required";
+  } else {
+   const text=htmlToText((await response.text()).slice(0,750000));
+   const hit=NO_SOLICIT_PATTERNS.find(rx=>rx.test(text));
+   if(hit) {
+    status="blocked";
+    note="Explicit no-solicitation language detected on public source";
+   } else {
+    status="clear";
+    note="No explicit no-solicitation phrase detected on reviewed public source";
+   }
+  }
+ } catch(error) {
+  note="Source re-check failed: "+String(error?.message||error).slice(0,300);
+ }
+ await env.LEADS_DB.prepare("UPDATE outbound_prospects_v2 SET solicitation_checked_at=?,solicitation_status=?,solicitation_note=?,updated_at=? WHERE id=?")
+  .bind(checkedAt,status,note,checkedAt,p.id).run();
+ return {status,note,checked_at:checkedAt};
+}
+
 export function validateProspect(body) {
  const p = {};
  for(const key of ['organization','contact_name','role','email','segment','city','source_url','fit_reason','personalization_hook','priority'])
@@ -85,6 +138,23 @@ async function preview(env) {
 }
 export async function outboundApi(request,env,url) {
  if(url.pathname==='/api/admin/outbound/unsubscribe') return unsubscribe(request,env,url,suppress);
+ if(url.pathname==='/api/admin/outbound/provider-webhook') {
+  if(request.method!=="POST") return json({error:"Method not allowed"},405);
+  if(!webhookAuthorized(request,env)) return json({error:"Webhook authorization required"},401);
+  const event=normalizeInstantlyWebhook(await request.json());
+  if(!event.email || !event.external_event_id) return json({error:"Webhook event cannot be correlated"},400);
+  const p=await env.LEADS_DB.prepare("SELECT * FROM outbound_prospects_v2 WHERE email_normalized=?").bind(event.email).first();
+  if(!p) return json({ok:true,ignored:true});
+  const exists=await env.LEADS_DB.prepare("SELECT 1 FROM outbound_events_v2 WHERE external_event_id=?").bind(event.external_event_id).first();
+  if(exists) return json({ok:true,duplicate:true});
+  const at=now();
+  if(event.event_type==="reply") await stopForReply(env,p.id,at);
+  if(["hard_bounce","unsubscribe"].includes(event.event_type)) await suppress(env,p.email_normalized,event.event_type,"instantly_webhook");
+  if(event.event_type==="sent") await env.LEADS_DB.prepare("UPDATE outbound_prospects_v2 SET provider_status='sent',updated_at=? WHERE id=?").bind(at,p.id).run();
+  await env.LEADS_DB.prepare("INSERT INTO outbound_events_v2(prospect_id,external_event_id,event_type,detail,created_at) VALUES(?,?,?,?,?)")
+   .bind(p.id,event.external_event_id,event.event_type,JSON.stringify({provider:"instantly",provider_event_type:event.provider_event_type,provider_message_id:event.provider_message_id}),at).run();
+  return json({ok:true});
+ }
  if(!await authorized(request,env)) return json({error:'Outbound authorization required'},401);
  if(!env.LEADS_DB) return json({error:'Database unavailable'},503);
  try {
