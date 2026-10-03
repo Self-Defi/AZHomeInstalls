@@ -11,11 +11,14 @@ body{font:16px system-ui;background:#f7f5ef;color:#171717;margin:0}main{max-widt
 <section class="panel"><h2>Readiness</h2><div id="readiness">Connect to view readiness.</div></section>
 <section class="panel"><h2>Daily outreach limit</h2><p>Includes initial messages and follow-ups. Saving keeps sending paused.</p><label>Daily cap<input id="dailyCap" type="number" min="1" max="20" value="5"></label><button id="saveCap">Save limit</button></section>
 <section class="panel"><h2>Add a public business contact</h2><form id="prospectForm"><div class="grid">
-<label>Organization<input name="organization" required maxlength="1000"></label><label>Segment<select name="segment"><option value="property_manager">Property manager</option><option value="realtor">Realtor / relocation partner</option></select></label>
+<label>Organization<input name="organization" required maxlength="1000"></label><label>Segment<select name="segment"><option value="property_manager">Property manager</option><option value="design_studio">Design studio</option><option value="home_stager">Home stager</option><option value="realtor">Realtor / real-estate team</option><option value="moving_company">Moving company</option><option value="builder_new_community">Builder / new community</option></select></label>
 <label>Contact name<input name="contact_name" maxlength="200"></label><label>Role<input name="role" maxlength="200"></label>
 <label>Public business email<input name="email" type="email" required maxlength="254"></label><label>City<input name="city" required maxlength="1000"></label>
+<label>Wave<input name="wave_number" type="number" min="1" max="999" value="1" required></label><label>Priority<select name="priority"><option value="A">A</option><option value="B" selected>B</option><option value="C">C</option></select></label>
+<label>Vendor-friendly<select name="vendor_friendly"><option value="0" selected>No / not confirmed</option><option value="1">Yes</option></select></label><label>Solicitation checked<input name="solicitation_checked_at" type="datetime-local" required></label>
 <label class="wide">Public source URL<input name="source_url" type="url" required maxlength="2000"></label>
-<label class="wide">Verified service-fit reason / personalization<textarea name="fit_reason" required maxlength="1000" rows="3" placeholder="Use a factual sentence you can support from the source."></textarea></label>
+<label class="wide">Verified fit reason<textarea name="fit_reason" required maxlength="1000" rows="3" placeholder="Factual reason this business fits AHI outreach."></textarea></label>
+<label class="wide">Personalization hook<textarea name="personalization_hook" maxlength="1000" rows="3" placeholder="Specific opening-line fact supported by the public source."></textarea></label>
 </div><button>Add prospect</button></form></section>
 <section class="panel"><h2>Prospect review</h2><div class="actions"><button id="refresh">Refresh</button><button id="preview">Preview queue</button></div><div id="metrics"></div><div id="prospects"></div></section>
 <section class="panel"><h2>Sequence queue</h2><div id="queue"></div></section>
@@ -44,7 +47,7 @@ async function refresh(){
  $('prospects').replaceChildren();
  for(const p of list.prospects){
   const card=document.createElement('div');card.className='prospect';
-  card.append(text('strong',p.organization+' — '+p.stage),text('p',p.email+' · '+p.city+' · '+p.segment),text('p',p.fit_reason));
+  card.append(text('strong',p.organization+' — '+p.stage),text('p','Wave '+p.wave_number+' · Priority '+p.priority+' · '+p.email+' · '+p.city+' · '+p.segment),text('p',(p.vendor_friendly?'Vendor-friendly · ':'')+(p.personalization_hook||p.fit_reason)));
   const link=document.createElement('a');link.href=p.source_url;link.textContent='View public source';link.target='_blank';link.rel='noopener noreferrer';card.append(link);
   const actions=document.createElement('div');actions.className='actions';
   for(const [label,action] of [['Approve & queue','approve'],['Record reply & stop','reply'],['Mark qualified','qualify'],['Link estimate request','link-lead'],['Do not contact','suppress']]){
@@ -56,9 +59,10 @@ async function refresh(){
   card.append(actions);$('prospects').append(card);
  }
 }
+const solicitationInput=document.querySelector('[name="solicitation_checked_at"]');if(solicitationInput&&!solicitationInput.value){const d=new Date();d.setMinutes(d.getMinutes()-d.getTimezoneOffset());solicitationInput.value=d.toISOString().slice(0,16)}
 $('connect').onclick=()=>perform(async()=>{credential=$('token').value;$('token').value='';await refresh();feedback('Connected. Live sending remains disabled.')});
 $('saveCap').onclick=()=>perform(async()=>{await api('settings','POST',{daily_cap:Number($('dailyCap').value)});feedback('Daily limit saved. Sending remains paused.');await refresh()});
 $('refresh').onclick=()=>perform(refresh);
-$('prospectForm').onsubmit=e=>{e.preventDefault();perform(async()=>{await api('prospects','POST',Object.fromEntries(new FormData(e.target)));e.target.reset();feedback('Prospect saved for review.');await refresh()})};
+$('prospectForm').onsubmit=e=>{e.preventDefault();perform(async()=>{const body=Object.fromEntries(new FormData(e.target));body.wave_number=Number(body.wave_number);body.vendor_friendly=body.vendor_friendly==='1';body.solicitation_checked_at=new Date(body.solicitation_checked_at).toISOString();await api('prospects','POST',body);e.target.reset();e.target.wave_number.value='1';e.target.priority.value='B';e.target.vendor_friendly.value='0';feedback('Prospect saved for review.');await refresh()})};
 $('preview').onclick=()=>perform(async()=>{const data=await api('preview');$('previews').replaceChildren();for(const m of data.messages)$('previews').append(text('h3',m.subject),text('pre',m.text));if(!data.messages.length)$('previews').append(text('p','No approved, eligible initial messages.'))});
 </script></body></html>
