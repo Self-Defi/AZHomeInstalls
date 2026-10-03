@@ -9,7 +9,7 @@ body{font:16px system-ui;background:#f7f5ef;color:#171717;margin:0}main{max-widt
 <label>Outbound credential<input id="token" type="password" autocomplete="off"></label><label>Reviewer name<input id="reviewer" autocomplete="name"></label>
 <button id="connect">Connect</button><p id="feedback" role="status"></p></section>
 <section class="panel"><h2>Readiness</h2><div id="readiness">Connect to view readiness.</div></section>
-<section class="panel"><h2>Daily new-prospect limit</h2><p>Controls new prospect launches only. Instantly will manage sequence follow-ups. Saving keeps sending paused.</p><label>Daily cap<input id="dailyCap" type="number" min="1" max="20" value="5"></label><button id="saveCap">Save limit</button></section>
+<section class="panel"><h2>Campaign control</h2><p>Controls new prospect launches only. Instantly will manage sequence follow-ups.</p><label>Daily cap<input id="dailyCap" type="number" min="1" max="20" value="20"></label><div class="actions"><button id="saveCap">Save limit & keep paused</button><button id="activateOas">Activate OAS</button><button id="pauseOas">Pause OAS</button></div></section>
 <section class="panel"><h2>Add a public business contact</h2><form id="prospectForm"><div class="grid">
 <label>Organization<input name="organization" required maxlength="1000"></label><label>Segment<select name="segment"><option value="property_manager">Property manager</option><option value="design_studio">Design studio</option><option value="home_stager">Home stager</option><option value="realtor">Realtor / real-estate team</option><option value="moving_company">Moving company</option><option value="builder_new_community">Builder / new community</option></select></label>
 <label>Contact name<input name="contact_name" maxlength="200"></label><label>Role<input name="role" maxlength="200"></label>
@@ -62,7 +62,9 @@ async function refresh(){
 }
 const solicitationInput=document.querySelector('[name="solicitation_checked_at"]');if(solicitationInput&&!solicitationInput.value){const d=new Date();d.setMinutes(d.getMinutes()-d.getTimezoneOffset());solicitationInput.value=d.toISOString().slice(0,16)}
 $('connect').onclick=()=>perform(async()=>{credential=$('token').value;$('token').value='';await refresh();feedback('Connected. Live sending remains disabled.')});
-$('saveCap').onclick=()=>perform(async()=>{await api('settings','POST',{daily_cap:Number($('dailyCap').value)});feedback('Daily limit saved. Sending remains paused.');await refresh()});
+$('saveCap').onclick=()=>perform(async()=>{await api('settings','POST',{daily_cap:Number($('dailyCap').value),paused:true});feedback('Daily limit saved. Sending remains paused.');await refresh()});
+$('activateOas').onclick=()=>perform(async()=>{if(!confirm('Activate OAS new-prospect launches? Readiness gates must all pass.'))return;await api('settings','POST',{daily_cap:Number($('dailyCap').value),paused:false});feedback('OAS activated.');await refresh()});
+$('pauseOas').onclick=()=>perform(async()=>{await api('settings','POST',{daily_cap:Number($('dailyCap').value),paused:true});feedback('OAS paused.');await refresh()});
 $('refresh').onclick=()=>perform(refresh);
 $('prospectForm').onsubmit=e=>{e.preventDefault();perform(async()=>{const body=Object.fromEntries(new FormData(e.target));body.wave_number=Number(body.wave_number);body.vendor_friendly=body.vendor_friendly==='1';body.solicitation_checked_at=new Date(body.solicitation_checked_at).toISOString();await api('prospects','POST',body);e.target.reset();e.target.wave_number.value='1';e.target.priority.value='B';e.target.vendor_friendly.value='0';feedback('Prospect saved for review.');await refresh()})};
 $('preview').onclick=()=>perform(async()=>{const data=await api('preview');$('previews').replaceChildren();for(const m of data.messages)$('previews').append(text('h3',m.subject),text('pre',m.text));if(!data.messages.length)$('previews').append(text('p','No approved, eligible initial messages.'))});
