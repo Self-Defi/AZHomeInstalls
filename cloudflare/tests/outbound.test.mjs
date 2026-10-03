@@ -24,3 +24,10 @@ test('outbound access fails closed with missing or wrong secret',async()=>{
  const response=await outboundApi(new Request('https://example.com/api/admin/outbound/prospects'),{},new URL('https://example.com/api/admin/outbound/prospects'));
  assert.equal(response.status,401);
 });
+
+test('Phoenix day and follow-ups use local day boundaries and weekday windows',async()=>{
+ const {phoenixDate,followupDue}=await import('../outbound-controls.js');
+ assert.equal(phoenixDate(new Date('2026-10-03T06:30:00Z')),'2026-10-02');
+ assert.equal(followupDue('2026-10-01T17:00:00Z',3),'2026-10-05T17:00:00.000Z');
+ assert.equal(followupDue('2026-10-01T17:00:00Z',9),'2026-10-12T17:00:00.000Z');
+});

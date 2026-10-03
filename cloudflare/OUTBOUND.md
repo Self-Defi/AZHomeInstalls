@@ -40,7 +40,48 @@ All endpoints below require Authorization: Bearer OUTBOUND_ADMIN_TOKEN.
 Suppression cancels pending messages and disables existing lead follow-ups
 for the same normalized address. Imports cannot reintroduce that address.
 No endpoint unsuppresses it. Reply recording stops the enrollment permanently;
-there is no automatic inbound reply ingestion in this release.
+authenticated event ingestion is available, but no email provider is connected yet. Auto-replies also stop the sequence conservatively.
+
+## Preparation controls (October 3)
+
+No new D1 migration is required. This release still cannot send emails.
+The assigned Gilbert address is configured, with OUTBOUND_MAILBOX_APPROVED=false.
+Only change that flag after iPostal1 approves the mailbox.
+
+Create a separate random secret of at least 32 characters named
+OUTBOUND_UNSUBSCRIBE_SECRET. Keep it stable: rotating it invalidates existing
+opt-out links. Never reuse the admin credential as the signing secret.
+Preview links become available after this secret is configured. GET displays a
+confirmation; POST suppresses immediately and requires no admin credential.
+Before any live use, verify Cloudflare Access allows this exact public endpoint
+without login (the remaining admin endpoints must stay protected). One-click
+email headers and provider integration still need to be connected and tested.
+
+Additional authenticated endpoints:
+- POST settings: {daily_cap: 1–20}; saving always leaves sending paused.
+- GET queue: sequence message state; all follow-ups remain unscheduled until
+  an actual initial send is recorded by a future dispatcher.
+- POST prospects/:id/qualify: only after a recorded reply.
+- POST prospects/:id/link-lead: {lead_id}; attach an existing CRM estimate
+  request, including a customer's request referred by the partner. Repeated
+  links are idempotent; a partner can refer multiple installs. This stops
+  outreach but creates no customer record and sends no customer email.
+- POST events: {external_event_id, message_id, event_type}. This is an internal
+  trusted bridge protected by the admin credential, not a raw provider webhook.
+  A future adapter must verify the provider signature and correlate its message
+  ID before calling it. Supported events: reply, auto_reply, delivered,
+  hard_bounce, complaint, unsubscribe. Do not send mailbox contents or secrets
+  in event payloads. Duplicate events have idempotent effects. Delivery requires
+  a recorded sent_at; unsent previews cannot be marked delivered.
+
+Metrics count messages sent/delivered, prospects with recorded human replies,
+explicitly linked estimate requests, and distinct CRM lead IDs accepted or
+completed. Accepted/completed currently reflect CRM statuses; do not interpret
+these as immutable historical totals. Auto-replies are excluded from human
+reply counts. Linking a lead explicitly asserts an estimate request, so only
+link actual requests, not a generic partner contact. Delivery means receiving
+server acceptance, not verified inbox placement. The scheduling helper has
+Phoenix weekday dates but is not connected to a send dispatcher yet.
 
 ## Next implementation
 
@@ -48,9 +89,8 @@ there is no automatic inbound reply ingestion in this release.
   Cloudflare Email Service currently documents transactional-only use:
   https://developers.cloudflare.com/email-service/reference/faq/
 - Verify SPF, DKIM, DMARC and received-message alignment for the chosen sender.
-- Add authenticated inbound reply handling and delivery/bounce events with
-  deduplication, thread correlation, and conservative pause on auto-replies.
-- Add signed opt-out tokens, body link and standards-based one-click endpoint.
+- Connect provider-verified reply and delivery/bounce events to the trusted bridge.
+- Connect signed opt-out body links and one-click email headers in the provider adapter.
 - Dispatcher: weekday Phoenix send window, atomic daily reservations, unique
   message keys, leased claims, provider idempotency where available, and
   reconciliation rather than blind retry after ambiguous timeouts.

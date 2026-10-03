@@ -1,3 +1,4 @@
+import { unsubscribe, unsubscribeUrl, recordEvent, stopForReply, linkLead, phoenixDate } from './outbound-controls.js';
 // Pilot foundation: no provider adapter and no live send path.
 const SEGMENTS = new Set(['property_manager','realtor']);
 export const OFFSETS = [0,3,9];
@@ -18,6 +19,7 @@ export function validateProspect(body) {
  const p = {};
  for(const key of ['organization','contact_name','role','email','segment','city','source_url','fit_reason'])
   p[key] = String(body[key] || '').trim();
+ if(['email','organization','contact_name'].some(k=>/[\r\n]/.test(p[k]))) throw Error('Single-line identity fields required');
  p.email_normalized = normalizeEmail(p.email);
  if(!validEmail(p.email_normalized)) throw Error('Valid public business email required');
  if(!SEGMENTS.has(p.segment)) throw Error('Unsupported launch segment');
@@ -67,9 +69,10 @@ export async function suppress(env,email,reason,source) {
 async function preview(env) {
  const {results=[]} = await env.LEADS_DB.prepare(
   "SELECT p.*,m.id AS message_id,m.step,m.due_at FROM outbound_messages m JOIN outbound_enrollments e ON e.id=m.enrollment_id JOIN outbound_prospects p ON p.id=e.prospect_id LEFT JOIN email_suppressions s ON s.email_normalized=p.email_normalized WHERE m.status='queued' AND e.status='queued' AND p.approved_at IS NOT NULL AND p.last_reply_at IS NULL AND s.email_normalized IS NULL AND m.step=0 ORDER BY m.id LIMIT 20").all();
- return results.map(p=>({prospect_id:p.id,message_id:p.message_id,...renderTemplate(p,Number(p.step),{address:env.OUTBOUND_MAILING_ADDRESS})}));
+ return Promise.all(results.map(async p=>({prospect_id:p.id,message_id:p.message_id,...renderTemplate(p,Number(p.step),{address:env.OUTBOUND_MAILING_ADDRESS,optout:env.OUTBOUND_UNSUBSCRIBE_SECRET ? 'Unsubscribe: '+await unsubscribeUrl(env,p) : undefined})})));
 }
 export async function outboundApi(request,env,url) {
+ if(url.pathname==='/api/admin/outbound/unsubscribe') return unsubscribe(request,env,url,suppress);
  if(!await authorized(request,env)) return json({error:'Outbound authorization required'},401);
  if(!env.LEADS_DB) return json({error:'Database unavailable'},503);
  try {
@@ -77,7 +80,7 @@ export async function outboundApi(request,env,url) {
   const resource=parts[3], id=Number(parts[4]), action=parts[5];
   if(resource==='status' && request.method==='GET') {
    const settings=await env.LEADS_DB.prepare('SELECT * FROM outbound_settings WHERE id=1').first();
-   return json({settings,live_sending:false,mode:'dry_run',blockers:['Approved outbound transport not configured','Reply and delivery ingestion not configured','Unsubscribe transport not configured',...(!env.OUTBOUND_MAILING_ADDRESS?['Mailing address missing']:[])]});
+   return json({settings,live_sending:false,mode:'dry_run',blockers:['Approved outbound transport not configured','Email provider event connection not configured',...(!env.OUTBOUND_UNSUBSCRIBE_SECRET?['Opt-out signing secret missing']:[]),...(!env.OUTBOUND_MAILING_ADDRESS?['Mailing address missing']:[]),...(env.OUTBOUND_MAILBOX_APPROVED!=='true'?['Mailbox approval pending']:[])]});
   }
   if(resource==='prospects' && !parts[4]) {
    if(request.method==='GET') {
@@ -104,13 +107,14 @@ export async function outboundApi(request,env,url) {
     await audit(env,id,'suppressed'); return json({ok:true});
    }
    if(action==='reply') {
-    const at=now();
-    await env.LEADS_DB.batch([
-     env.LEADS_DB.prepare("UPDATE outbound_prospects SET stage='replied',last_reply_at=?,updated_at=? WHERE id=? AND stage!='do_not_contact'").bind(at,at,id),
-     env.LEADS_DB.prepare("UPDATE outbound_enrollments SET status='stopped',stop_reason='reply',last_reply_at=? WHERE prospect_id=?").bind(at,id),
-     env.LEADS_DB.prepare("UPDATE outbound_messages SET status='cancelled' WHERE status IN ('queued','claimed') AND enrollment_id IN (SELECT id FROM outbound_enrollments WHERE prospect_id=?)").bind(id)
-    ]);
+    await stopForReply(env,id);
     await audit(env,id,'reply_recorded',{manual:true}); return json({ok:true});
+   }
+   if(action==='link-lead') return linkLead(env,p,body);
+   if(action==='qualify') {
+    if(p.stage!=='replied') return json({error:'Record a reply before qualification'},409);
+    await env.LEADS_DB.prepare("UPDATE outbound_prospects SET stage='qualified',updated_at=? WHERE id=? AND stage='replied'").bind(now(),id).run();
+    await audit(env,id,'qualified');return json({ok:true});
    }
    if(action==='approve') {
     const reviewer=String(body.reviewed_by||'').trim();
@@ -125,12 +129,24 @@ export async function outboundApi(request,env,url) {
     await audit(env,id,'approved',{reviewer}); return json({ok:true});
    }
   }
+  if(resource==='events' && request.method==='POST') return recordEvent(env,await request.json(),suppress);
+  if(resource==='settings' && request.method==='POST') {
+   const body=await request.json(), cap=Number(body.daily_cap);
+   if(!Number.isInteger(cap)||cap<1||cap>20) return json({error:'Daily cap must be 1–20'},400);
+   await env.LEADS_DB.prepare('UPDATE outbound_settings SET daily_cap=?,paused=1 WHERE id=1').bind(cap).run();
+   await audit(env,null,'settings_changed',{daily_cap:cap,paused:true});return json({ok:true,paused:true});
+  }
+  if(resource==='queue' && request.method==='GET') {
+   const {results=[]}=await env.LEADS_DB.prepare('SELECT m.id,m.step,m.day_offset,m.status,m.due_at,m.sent_at,m.delivered_at,p.organization,p.stage,e.stop_reason FROM outbound_messages m JOIN outbound_enrollments e ON e.id=m.enrollment_id JOIN outbound_prospects p ON p.id=e.prospect_id ORDER BY m.id DESC LIMIT 500').all();
+   return json({messages:results,phoenix_date:phoenixDate(),live_sending:false});
+  }
   if(resource==='preview' && request.method==='GET') return json({mode:'dry_run',messages:await preview(env)});
   if(resource==='metrics' && request.method==='GET') {
    const {results=[]}=await env.LEADS_DB.prepare('SELECT segment,stage,count(*) AS count FROM outbound_prospects GROUP BY segment,stage').all();
    const messages=await env.LEADS_DB.prepare("SELECT count(*) AS queued FROM outbound_messages WHERE status='queued'").first();
    const suppressed=await env.LEADS_DB.prepare('SELECT count(*) AS count FROM email_suppressions').first();
-   return json({prospects:results,messages,suppressed:suppressed.count,live_sending:false});
+   const funnel=await env.LEADS_DB.prepare("SELECT (SELECT count(*) FROM outbound_messages WHERE sent_at IS NOT NULL) AS sent,(SELECT count(*) FROM outbound_messages WHERE delivered_at IS NOT NULL) AS delivered,(SELECT count(DISTINCT prospect_id) FROM outbound_events WHERE event_type IN ('reply_recorded','reply')) AS replied,(SELECT count(DISTINCT lead_id) FROM outbound_lead_links) AS estimate_requested,(SELECT count(DISTINCT l.id) FROM outbound_lead_links x JOIN leads l ON l.id=x.lead_id WHERE l.status IN ('accepted','scheduled','completed')) AS estimate_accepted,(SELECT count(DISTINCT l.id) FROM outbound_lead_links x JOIN leads l ON l.id=x.lead_id WHERE l.status='completed') AS install_completed").first();
+   return json({prospects:results,messages,suppressed:suppressed.count,funnel,live_sending:false});
   }
   return json({error:'Route not found'},404);
  } catch(error) {

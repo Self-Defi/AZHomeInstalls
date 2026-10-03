@@ -4,11 +4,12 @@
 body{font:16px system-ui;background:#f7f5ef;color:#171717;margin:0}main{max-width:1100px;margin:auto;padding:24px}a{color:#664900}h1{margin-bottom:8px}.notice{padding:16px;background:#171717;color:#fff;border-radius:12px;margin:20px 0}.panel{background:white;padding:20px;border:1px solid #ddd;border-radius:12px;margin:16px 0}input,select,textarea,button{font:inherit;padding:10px;border:1px solid #bbb;border-radius:7px}input,select,textarea{width:100%;box-sizing:border-box}button{cursor:pointer;background:#f3d58a;color:#171717}label{display:block;margin-bottom:12px}.grid{display:grid;grid-template-columns:1fr 1fr;gap:12px}.actions{display:flex;gap:8px;flex-wrap:wrap}.prospect{border-top:1px solid #ddd;padding:16px 0}.prospect p{margin:6px 0}.muted{color:#666}.error{color:#a11818}pre{white-space:pre-wrap;overflow-wrap:anywhere;background:#faf9f4;padding:12px}.wide{grid-column:1/-1}@media(max-width:650px){.grid{grid-template-columns:1fr}}button:disabled{opacity:.5}
 </style></head><body><main>
 <a href="/admin/">← Lead CRM</a><h1>AHI Outbound</h1><p>Review public business contacts and prepare targeted outreach.</p>
-<div class="notice"><strong>Dry-run foundation</strong><br>Messages are previews only. Live sending and automatic reply detection are not connected.</div>
+<div class="notice"><strong>Outbound preparation</strong><br>Messages are previews only. Live sending remains disabled; email provider connection is pending.</div>
 <section class="panel"><h2>Connect securely</h2><p class="muted">Use the outbound admin credential configured in Cloudflare. It stays in memory for this page session.</p>
 <label>Outbound credential<input id="token" type="password" autocomplete="off"></label><label>Reviewer name<input id="reviewer" autocomplete="name"></label>
 <button id="connect">Connect</button><p id="feedback" role="status"></p></section>
 <section class="panel"><h2>Readiness</h2><div id="readiness">Connect to view readiness.</div></section>
+<section class="panel"><h2>Daily outreach limit</h2><p>Includes initial messages and follow-ups. Saving keeps sending paused.</p><label>Daily cap<input id="dailyCap" type="number" min="1" max="20" value="5"></label><button id="saveCap">Save limit</button></section>
 <section class="panel"><h2>Add a public business contact</h2><form id="prospectForm"><div class="grid">
 <label>Organization<input name="organization" required maxlength="1000"></label><label>Segment<select name="segment"><option value="property_manager">Property manager</option><option value="realtor">Realtor / relocation partner</option></select></label>
 <label>Contact name<input name="contact_name" maxlength="200"></label><label>Role<input name="role" maxlength="200"></label>
@@ -17,7 +18,8 @@ body{font:16px system-ui;background:#f7f5ef;color:#171717;margin:0}main{max-widt
 <label class="wide">Verified service-fit reason / personalization<textarea name="fit_reason" required maxlength="1000" rows="3" placeholder="Use a factual sentence you can support from the source."></textarea></label>
 </div><button>Add prospect</button></form></section>
 <section class="panel"><h2>Prospect review</h2><div class="actions"><button id="refresh">Refresh</button><button id="preview">Preview queue</button></div><div id="metrics"></div><div id="prospects"></div></section>
-<section class="panel"><h2>Message previews</h2><p class="muted">Address and unsubscribe placeholders must be resolved before live sending is implemented.</p><div id="previews"></div></section>
+<section class="panel"><h2>Sequence queue</h2><div id="queue"></div></section>
+<section class="panel"><h2>Message previews</h2><p class="muted">Signed unsubscribe links appear once the signing secret is configured. Mailbox approval and provider setup are still required.</p><div id="previews"></div></section>
 </main><script type="module">
 let credential='';
 const $=id=>document.getElementById(id);
@@ -30,25 +32,32 @@ async function api(path,method='GET',body){
 }
 async function perform(fn){try{await fn()}catch(e){feedback(e.message,true)}}
 async function refresh(){
- const [status,list,metrics]=await Promise.all([api('status'),api('prospects'),api('metrics')]);
+ const [status,list,metrics,queue]=await Promise.all([api('status'),api('prospects'),api('metrics'),api('queue')]);
+ $('dailyCap').value=status.settings.daily_cap;
+ $('queue').replaceChildren();
+ for(const m of queue.messages)$('queue').append(text('p',m.organization+' · Day '+(m.day_offset+1)+' · '+m.status+' · '+(m.due_at||'Scheduled after initial send')));
+ if(!queue.messages.length)$('queue').append(text('p','No sequence messages yet.'));
  $('readiness').replaceChildren(text('p','Mode: '+status.mode+' · Daily cap: '+status.settings.daily_cap));
  status.blockers.forEach(v=>$('readiness').append(text('p',v)));
  $('metrics').replaceChildren(text('p',list.prospects.length+' prospects · '+metrics.messages.queued+' sequence messages queued · '+metrics.suppressed+' suppressed'));
+ for(const [key,value] of Object.entries(metrics.funnel))$('metrics').append(text('p',key.replaceAll('_',' ')+': '+value));
  $('prospects').replaceChildren();
  for(const p of list.prospects){
   const card=document.createElement('div');card.className='prospect';
   card.append(text('strong',p.organization+' — '+p.stage),text('p',p.email+' · '+p.city+' · '+p.segment),text('p',p.fit_reason));
   const link=document.createElement('a');link.href=p.source_url;link.textContent='View public source';link.target='_blank';link.rel='noopener noreferrer';card.append(link);
   const actions=document.createElement('div');actions.className='actions';
-  for(const [label,action] of [['Approve & queue','approve'],['Record reply & stop','reply'],['Do not contact','suppress']]){
+  for(const [label,action] of [['Approve & queue','approve'],['Record reply & stop','reply'],['Mark qualified','qualify'],['Link estimate request','link-lead'],['Do not contact','suppress']]){
    if(action==='approve' && p.stage!=='prospect')continue;
    if(p.stage==='do_not_contact')continue;
-   const b=text('button',label);b.onclick=()=>perform(async()=>{await api('prospects/'+p.id+'/'+action,'POST',{reviewed_by:$('reviewer').value});feedback(label+' completed.');await refresh()});actions.append(b);
+   if(action==='qualify' && p.stage!=='replied')continue;
+   const b=text('button',label);b.onclick=()=>perform(async()=>{const body={reviewed_by:$('reviewer').value};if(action==='link-lead'){const value=prompt('Existing CRM lead ID for this confirmed estimate request:');if(value===null)return;body.lead_id=Number(value);}await api('prospects/'+p.id+'/'+action,'POST',body);feedback(label+' completed.');await refresh()});actions.append(b);
   }
   card.append(actions);$('prospects').append(card);
  }
 }
 $('connect').onclick=()=>perform(async()=>{credential=$('token').value;$('token').value='';await refresh();feedback('Connected. Live sending remains disabled.')});
+$('saveCap').onclick=()=>perform(async()=>{await api('settings','POST',{daily_cap:Number($('dailyCap').value)});feedback('Daily limit saved. Sending remains paused.');await refresh()});
 $('refresh').onclick=()=>perform(refresh);
 $('prospectForm').onsubmit=e=>{e.preventDefault();perform(async()=>{await api('prospects','POST',Object.fromEntries(new FormData(e.target)));e.target.reset();feedback('Prospect saved for review.');await refresh()})};
 $('preview').onclick=()=>perform(async()=>{const data=await api('preview');$('previews').replaceChildren();for(const m of data.messages)$('previews').append(text('h3',m.subject),text('pre',m.text));if(!data.messages.length)$('previews').append(text('p','No approved, eligible initial messages.'))});
