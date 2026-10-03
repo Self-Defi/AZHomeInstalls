@@ -96,7 +96,7 @@ export async function outboundApi(request,env,url) {
   }
   if(resource==='prospects' && !parts[4]) {
    if(request.method==='GET') {
-    const {results=[]}=await env.LEADS_DB.prepare('SELECT * FROM outbound_prospects_v2 ORDER BY wave_number ASC, priority ASC, id DESC LIMIT 500').all();
+    const {results=[]}=await env.LEADS_DB.prepare(`SELECT p.*,w.launch_day,w.send_order FROM outbound_prospects_v2 p LEFT JOIN outbound_wave_plan w ON w.prospect_id=p.id ORDER BY p.wave_number ASC, CASE WHEN w.launch_day IS NULL THEN 999 ELSE w.launch_day END ASC, CASE WHEN w.send_order IS NULL THEN 999 ELSE w.send_order END ASC, p.priority ASC, p.id DESC LIMIT 500`).all();
     return json({prospects:results});
    }
    if(request.method==='POST') {
