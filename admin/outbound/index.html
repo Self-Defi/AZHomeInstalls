@@ -1,7 +1,7 @@
 <!doctype html>
 <html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><meta name="robots" content="noindex,nofollow"><title>AHI Outbound</title>
 <style>
-body{font:16px system-ui;background:#f7f5ef;color:#171717;margin:0}main{max-width:1100px;margin:auto;padding:24px}a{color:#664900}h1{margin-bottom:8px}.notice{padding:16px;background:#171717;color:#fff;border-radius:12px;margin:20px 0}.panel{background:white;padding:20px;border:1px solid #ddd;border-radius:12px;margin:16px 0}input,select,textarea,button{font:inherit;padding:10px;border:1px solid #bbb;border-radius:7px}input,select,textarea{width:100%;box-sizing:border-box}button{cursor:pointer;background:#f3d58a;color:#171717}label{display:block;margin-bottom:12px}.grid{display:grid;grid-template-columns:1fr 1fr;gap:12px}.actions{display:flex;gap:8px;flex-wrap:wrap}.prospect{border-top:1px solid #ddd;padding:16px 0}.prospect p{margin:6px 0}.muted{color:#666}.error{color:#a11818}pre{white-space:pre-wrap;overflow-wrap:anywhere;background:#faf9f4;padding:12px}.wide{grid-column:1/-1}.stats{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:10px;margin:16px 0}.stat{background:#faf9f4;border:1px solid #ddd;border-radius:10px;padding:14px}.stat strong{display:block;font-size:1.5rem}.stat span{color:#666;font-size:.9rem}@media(max-width:650px){.grid{grid-template-columns:1fr}.stats{grid-template-columns:repeat(2,minmax(0,1fr))}}button:disabled{opacity:.5}
+body{font:16px system-ui;background:#f7f5ef;color:#171717;margin:0}main{max-width:1100px;margin:auto;padding:24px}a{color:#664900}h1{margin-bottom:8px}.notice{padding:16px;background:#171717;color:#fff;border-radius:12px;margin:20px 0}.panel{background:white;padding:20px;border:1px solid #ddd;border-radius:12px;margin:16px 0}input,select,textarea,button{font:inherit;padding:10px;border:1px solid #bbb;border-radius:7px}input,select,textarea{width:100%;box-sizing:border-box}button{cursor:pointer;background:#f3d58a;color:#171717}label{display:block;margin-bottom:12px}.grid{display:grid;grid-template-columns:1fr 1fr;gap:12px}.actions{display:flex;gap:8px;flex-wrap:wrap}.prospect{border-top:1px solid #ddd;padding:16px 0}.prospect p{margin:6px 0}.contact-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:8px 18px;margin:10px 0 12px}.contact-item{padding:8px 10px;background:#faf9f4;border:1px solid #e4e0d7;border-radius:8px}.contact-item b{display:block;font-size:.78rem;color:#666;text-transform:uppercase;letter-spacing:.02em;margin-bottom:3px}@media(max-width:650px){.contact-grid{grid-template-columns:1fr}}.muted{color:#666}.error{color:#a11818}pre{white-space:pre-wrap;overflow-wrap:anywhere;background:#faf9f4;padding:12px}.wide{grid-column:1/-1}.stats{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:10px;margin:16px 0}.stat{background:#faf9f4;border:1px solid #ddd;border-radius:10px;padding:14px}.stat strong{display:block;font-size:1.5rem}.stat span{color:#666;font-size:.9rem}@media(max-width:650px){.grid{grid-template-columns:1fr}.stats{grid-template-columns:repeat(2,minmax(0,1fr))}}button:disabled{opacity:.5}
 </style></head><body><main>
 <a href="/admin/">← Lead CRM</a><h1>AHI Outbound</h1><p>Review public business contacts and prepare targeted outreach.</p>
 <div class="notice"><strong>Outbound preparation</strong><br>Messages are previews only. Live sending remains disabled; email provider connection is pending.</div>
@@ -73,7 +73,21 @@ async function refresh(){
  $('prospects').replaceChildren();
  for(const p of list.prospects){
   const card=document.createElement('div');card.className='prospect';
-  card.append(text('strong',p.organization+' — '+p.stage),text('p','Wave '+p.wave_number+(p.launch_day?' · Day '+p.launch_day+' · Send #'+p.send_order:'')+' · Priority '+p.priority+' · '+p.email+' · '+p.city+' · '+p.segment),text('p',(p.vendor_friendly?'Vendor-friendly · ':'')+(p.personalization_hook||p.fit_reason)));
+  card.append(text('strong',p.organization+' — '+p.stage),text('p','Wave '+p.wave_number+(p.launch_day?' · Day '+p.launch_day+' · Send #'+p.send_order:'')+' · Priority '+p.priority+(p.vendor_friendly?' · Vendor-friendly':'')));
+  const info=document.createElement('div');info.className='contact-grid';
+  const addInfo=(label,value)=>{
+   const item=document.createElement('div');item.className='contact-item';
+   const lab=text('b',label);const val=text('span',value||'Not listed');
+   item.append(lab,val);info.append(item);
+  };
+  addInfo('Contact',p.contact_name||'General business contact');
+  addInfo('Role',p.role||'Not listed');
+  addInfo('Public email',p.email);
+  addInfo('City / area',p.city);
+  addInfo('Segment',p.segment.replaceAll('_',' '));
+  addInfo('Website',p.domain||'Not listed');
+  card.append(info);
+  card.append(text('p',p.personalization_hook||p.fit_reason));
   const link=document.createElement('a');link.href=p.source_url;link.textContent='View public source';link.target='_blank';link.rel='noopener noreferrer';card.append(link);
   const actions=document.createElement('div');actions.className='actions';
   for(const [label,action] of [['Re-check solicitation','preflight'],['Approve & queue','approve'],['Record reply & stop','reply'],['Mark qualified','qualify'],['Link estimate request','link-lead'],['Do not contact','suppress']]){
