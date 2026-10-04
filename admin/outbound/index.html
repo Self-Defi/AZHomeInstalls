@@ -1,7 +1,7 @@
 <!doctype html>
 <html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><meta name="robots" content="noindex,nofollow"><title>AHI Outbound</title>
 <style>
-body{font:16px system-ui;background:#f7f5ef;color:#171717;margin:0}main{max-width:1100px;margin:auto;padding:24px}a{color:#664900}h1{margin-bottom:8px}.notice{padding:16px;background:#171717;color:#fff;border-radius:12px;margin:20px 0}.panel{background:white;padding:20px;border:1px solid #ddd;border-radius:12px;margin:16px 0}input,select,textarea,button{font:inherit;padding:10px;border:1px solid #bbb;border-radius:7px}input,select,textarea{width:100%;box-sizing:border-box}button{cursor:pointer;background:#f3d58a;color:#171717}label{display:block;margin-bottom:12px}.grid{display:grid;grid-template-columns:1fr 1fr;gap:12px}.actions{display:flex;gap:8px;flex-wrap:wrap}.prospect{border-top:1px solid #ddd;padding:16px 0}.prospect p{margin:6px 0}.muted{color:#666}.error{color:#a11818}pre{white-space:pre-wrap;overflow-wrap:anywhere;background:#faf9f4;padding:12px}.wide{grid-column:1/-1}@media(max-width:650px){.grid{grid-template-columns:1fr}}button:disabled{opacity:.5}
+body{font:16px system-ui;background:#f7f5ef;color:#171717;margin:0}main{max-width:1100px;margin:auto;padding:24px}a{color:#664900}h1{margin-bottom:8px}.notice{padding:16px;background:#171717;color:#fff;border-radius:12px;margin:20px 0}.panel{background:white;padding:20px;border:1px solid #ddd;border-radius:12px;margin:16px 0}input,select,textarea,button{font:inherit;padding:10px;border:1px solid #bbb;border-radius:7px}input,select,textarea{width:100%;box-sizing:border-box}button{cursor:pointer;background:#f3d58a;color:#171717}label{display:block;margin-bottom:12px}.grid{display:grid;grid-template-columns:1fr 1fr;gap:12px}.actions{display:flex;gap:8px;flex-wrap:wrap}.prospect{border-top:1px solid #ddd;padding:16px 0}.prospect p{margin:6px 0}.muted{color:#666}.error{color:#a11818}pre{white-space:pre-wrap;overflow-wrap:anywhere;background:#faf9f4;padding:12px}.wide{grid-column:1/-1}.stats{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:10px;margin:16px 0}.stat{background:#faf9f4;border:1px solid #ddd;border-radius:10px;padding:14px}.stat strong{display:block;font-size:1.5rem}.stat span{color:#666;font-size:.9rem}@media(max-width:650px){.grid{grid-template-columns:1fr}.stats{grid-template-columns:repeat(2,minmax(0,1fr))}}button:disabled{opacity:.5}
 </style></head><body><main>
 <a href="/admin/">← Lead CRM</a><h1>AHI Outbound</h1><p>Review public business contacts and prepare targeted outreach.</p>
 <div class="notice"><strong>Outbound preparation</strong><br>Messages are previews only. Live sending remains disabled; email provider connection is pending.</div>
@@ -20,7 +20,7 @@ body{font:16px system-ui;background:#f7f5ef;color:#171717;margin:0}main{max-widt
 <label class="wide">Verified fit reason<textarea name="fit_reason" required maxlength="1000" rows="3" placeholder="Factual reason this business fits AHI outreach."></textarea></label>
 <label class="wide">Personalization hook<textarea name="personalization_hook" maxlength="1000" rows="3" placeholder="Specific opening-line fact supported by the public source."></textarea></label>
 </div><button>Add prospect</button></form></section>
-<section class="panel"><h2>Prospect review</h2><div class="actions"><button id="refresh">Refresh</button><button id="preview">Preview queue</button></div><div id="metrics"></div><div id="prospects"></div></section>
+<section class="panel"><h2>Prospect review</h2><div class="actions"><button id="refresh">Refresh</button><button id="preview">Preview queue</button></div><div id="totals" class="stats"></div><div id="metrics"></div><div id="prospects"></div></section>
 <section class="panel"><h2>Sequence queue</h2><div id="queue"></div></section>
 <section class="panel"><h2>Message previews</h2><p class="muted">Signed unsubscribe links appear once the signing secret is configured. Mailbox approval and provider setup are still required.</p><div id="previews"></div></section>
 </main><script type="module">
@@ -42,7 +42,33 @@ async function refresh(){
  if(!queue.messages.length)$('queue').append(text('p','No sequence messages yet.'));
  $('readiness').replaceChildren(text('p','Mode: '+status.mode+' · Daily cap: '+status.settings.daily_cap));
  status.blockers.forEach(v=>$('readiness').append(text('p',v)));
- $('metrics').replaceChildren(text('p',list.prospects.length+' prospects · '+metrics.messages.queued+' sequence messages queued · '+metrics.suppressed+' suppressed'));
+ const prospects=list.prospects;
+ const counts={
+  total:prospects.length,
+  wave1:prospects.filter(p=>Number(p.wave_number)===1).length,
+  priorityA:prospects.filter(p=>p.priority==='A').length,
+  vendor:prospects.filter(p=>Number(p.vendor_friendly)===1).length,
+  day1:prospects.filter(p=>Number(p.launch_day)===1).length,
+  queued:prospects.filter(p=>p.stage==='queued').length,
+  launched:prospects.filter(p=>p.stage==='launched').length,
+  replied:prospects.filter(p=>p.stage==='replied'||p.last_reply_at).length,
+  suppressed:metrics.suppressed
+ };
+ $('totals').replaceChildren();
+ for(const [label,value] of [
+  ['Total prospects',counts.total],
+  ['Wave 1',counts.wave1],
+  ['Priority A',counts.priorityA],
+  ['Vendor-friendly',counts.vendor],
+  ['Day 1 planned',counts.day1],
+  ['Queued',counts.queued],
+  ['Launched',counts.launched],
+  ['Replies',counts.replied]
+ ]){
+  const box=document.createElement('div');box.className='stat';
+  box.append(text('strong',String(value)),text('span',label));$('totals').append(box);
+ }
+ $('metrics').replaceChildren(text('p',metrics.messages.queued+' sequence messages queued · '+metrics.suppressed+' suppressed / DNC'));
  for(const [key,value] of Object.entries(metrics.funnel))$('metrics').append(text('p',key.replaceAll('_',' ')+': '+value));
  $('prospects').replaceChildren();
  for(const p of list.prospects){
@@ -59,6 +85,7 @@ async function refresh(){
   }
   card.append(actions);$('prospects').append(card);
  }
+ return {list,metrics,status,queue};
 }
 const solicitationInput=document.querySelector('[name="solicitation_checked_at"]');if(solicitationInput&&!solicitationInput.value){const d=new Date();d.setMinutes(d.getMinutes()-d.getTimezoneOffset());solicitationInput.value=d.toISOString().slice(0,16)}
 $('connect').onclick=()=>perform(async()=>{credential=$('token').value;$('token').value='';await refresh();feedback('Connected. Live sending remains disabled.')});
@@ -66,6 +93,6 @@ $('saveCap').onclick=()=>perform(async()=>{await api('settings','POST',{daily_ca
 $('activateOas').onclick=()=>perform(async()=>{if(!confirm('Activate OAS new-prospect launches? Readiness gates must all pass.'))return;await api('settings','POST',{daily_cap:Number($('dailyCap').value),paused:false});feedback('OAS activated.');await refresh()});
 $('pauseOas').onclick=()=>perform(async()=>{await api('settings','POST',{daily_cap:Number($('dailyCap').value),paused:true});feedback('OAS paused.');await refresh()});
 $('refresh').onclick=()=>perform(refresh);
-$('prospectForm').onsubmit=e=>{e.preventDefault();perform(async()=>{const body=Object.fromEntries(new FormData(e.target));body.wave_number=Number(body.wave_number);body.vendor_friendly=body.vendor_friendly==='1';body.solicitation_checked_at=new Date(body.solicitation_checked_at).toISOString();await api('prospects','POST',body);e.target.reset();e.target.wave_number.value='1';e.target.priority.value='B';e.target.vendor_friendly.value='0';feedback('Prospect saved for review.');await refresh()})};
+$('prospectForm').onsubmit=e=>{e.preventDefault();perform(async()=>{const body=Object.fromEntries(new FormData(e.target));body.wave_number=Number(body.wave_number);body.vendor_friendly=body.vendor_friendly==='1';body.solicitation_checked_at=new Date(body.solicitation_checked_at).toISOString();await api('prospects','POST',body);e.target.reset();e.target.wave_number.value='1';e.target.priority.value='B';e.target.vendor_friendly.value='0';const state=await refresh();feedback('Prospect added successfully. Total prospects: '+state.list.prospects.length+'.')})};
 $('preview').onclick=()=>perform(async()=>{const data=await api('preview');$('previews').replaceChildren();for(const m of data.messages)$('previews').append(text('h3',m.subject),text('pre',m.text));if(!data.messages.length)$('previews').append(text('p','No approved, eligible initial messages.'))});
 </script></body></html>
