@@ -43,6 +43,14 @@
       "migrations_dir": "migrations"
     }
   ],
+  "previews": {
+    "d1_databases": [
+      {
+        "binding": "LEADS_DB",
+        "database_id": "8cce9a83-ff34-409d-96c7-b33d1cbf134b"
+      }
+    ]
+  },
   "triggers": {
     "crons": [
       "0 * * * *"
