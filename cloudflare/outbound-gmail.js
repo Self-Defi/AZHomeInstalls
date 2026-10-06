@@ -58,12 +58,32 @@ export function buildMime({to,subject,text,messageId,optout,replyToId}) {
  const body=base64(text).match(/.{1,76}/g)?.join('\r\n')||'';
  return base64(headers.join('\r\n')+'\r\n\r\n'+body).replace(/\+/g,'-').replace(/\//g,'_').replace(/=+$/,'');
 }
-const header=(m,name)=>m.payload?.headers?.find(h=>h.name.toLowerCase()===name)?.value||'';
+const header=(m,name)=>m.payload?.headers?.find(h=>h.name.toLowerCase()===name.toLowerCase())?.value||'';
 export function incomingAfterSend(message,sentAt) {
  return !message.labelIds?.includes('SENT') && Number(message.internalDate)>=Date.parse(sentAt);
 }
 export async function syncGmail(env,suppress,tokenOverride) {
  const token=tokenOverride||await session(env);await identity(token);
+ // Delivery failures may arrive outside the original thread. Never continue
+ // sending when a recent failure cannot be correlated safely to a contact.
+ const first=await env.LEADS_DB.prepare('SELECT MIN(sent_at) AS sent_at FROM outbound_messages_v2 WHERE sent_at IS NOT NULL').first();
+ if(first?.sent_at){
+  const q='{from:mailer-daemon from:postmaster} after:'+Math.floor(Date.parse(first.sent_at)/1000);
+  const failures=await request(token,'/messages?includeSpamTrash=true&maxResults=100&q='+encodeURIComponent(q));
+  const hold=async()=>{await env.LEADS_DB.prepare('UPDATE outbound_settings SET paused=1 WHERE id=1').run();throw Error('Delivery failure needs review; outreach paused');};
+  if(failures.nextPageToken)await hold();
+  for(const item of failures.messages||[]){
+   const external='gmail:'+item.id;
+   if(await env.LEADS_DB.prepare('SELECT 1 FROM outbound_events_v2 WHERE external_event_id=?').bind(external).first())continue;
+   const message=await request(token,'/messages/'+encodeURIComponent(item.id)+'?format=metadata');
+   if(!incomingAfterSend(message,first.sent_at))continue;
+   if(!/mailer-daemon|postmaster/i.test(header(message,'From'))&&!/delivery-status/i.test(header(message,'Content-Type')))continue;
+   const row=await env.LEADS_DB.prepare('SELECT m.id,p.id AS prospect_id,p.email_normalized FROM outbound_messages_v2 m JOIN outbound_enrollments_v2 e ON e.id=m.enrollment_id JOIN outbound_prospects_v2 p ON p.id=e.prospect_id WHERE m.gmail_thread_id=? AND m.sent_at IS NOT NULL ORDER BY m.id DESC LIMIT 1').bind(message.threadId||'').first();
+   if(!row)await hold();
+   await suppress(env,row.email_normalized,'bounce','gmail_thread');
+   await env.LEADS_DB.prepare('INSERT OR IGNORE INTO outbound_events_v2(prospect_id,message_id,external_event_id,event_type,detail,created_at) VALUES(?,?,?,?,?,?)').bind(row.prospect_id,row.id,external,'hard_bounce',JSON.stringify({provider:'gmail',delivery_scan:true}),at()).run();
+  }
+ }
  const {results:rows=[]}=await env.LEADS_DB.prepare("SELECT m.id,m.gmail_thread_id,m.sent_at,p.id AS prospect_id,p.email_normalized FROM outbound_messages_v2 m JOIN outbound_enrollments_v2 e ON e.id=m.enrollment_id JOIN outbound_prospects_v2 p ON p.id=e.prospect_id WHERE m.gmail_thread_id IS NOT NULL AND p.last_reply_at IS NULL AND p.stage NOT IN ('do_not_contact','converted') ORDER BY m.id LIMIT 501").all();
  if(rows.length>500) throw Error('Reply scan capacity exceeded; sending blocked');
  let replies=0;

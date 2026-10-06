@@ -124,7 +124,7 @@ test('launch readiness exposes real blockers and never activates on credentials 
  } finally {globalThis.fetch=savedFetch;db.close();}
 });
 
-import { runGmail, buildMime } from '../outbound-gmail.js';
+import { runGmail, buildMime, syncGmail } from '../outbound-gmail.js';
 import { renderTemplate, suppress } from '../outbound.js';
 function gmailEnv(env){Object.assign(env,{OUTBOUND_GOOGLE_CLIENT_ID:'id',OUTBOUND_GOOGLE_CLIENT_SECRET:'secret',OUTBOUND_GOOGLE_REFRESH_TOKEN:'refresh',OUTBOUND_GMAIL_TESTED:'true',OUTBOUND_MAILBOX_APPROVED:'true',OUTBOUND_MAILING_ADDRESS:'Test mailing address',OUTBOUND_UNSUBSCRIBE_SECRET:'test'.repeat(10)});}
 function gmailMock({failSend=false,incoming=false,wrongIdentity=false}={}){
@@ -181,6 +181,35 @@ test('MIME encodes Unicode safely and rejects header injection',()=>{
  const args={to:'public@example.com',subject:'ADV: Installation — AHI',text:'Hello 👋',messageId:'ahi-1@azhomeinstalls.com',optout:'https://azhomeinstalls.com/api/admin/outbound/unsubscribe?token=test'};
  const mime=Buffer.from(buildMime(args),'base64url').toString();assert.match(mime,/List-Unsubscribe-Post: List-Unsubscribe=One-Click/);assert.match(mime,/From: AZHomeInstalls <outreach@azhomeinstalls.com>/);
  assert.throws(()=>buildMime({...args,subject:'Test\r\nBcc: attacker@example.com'}),/header/);
+});
+
+test('delivery scan suppresses correlated bounces and pauses on separate-thread failures',async()=>{
+ for(const correlated of [true,false]){
+  const {db,call,env}=fixture();gmailEnv(env);env.OUTBOUND_GMAIL_TESTED='false';const saved=globalThis.fetch;
+  try{
+   const fake=gmailMock();globalThis.fetch=fake.fetch;
+   await call('gmail-test-send','POST',{});
+   db.exec('UPDATE outbound_settings SET paused=0');
+   const sentAt=db.prepare('SELECT sent_at FROM outbound_messages_v2 WHERE step=0').get().sent_at;
+   globalThis.fetch=async(url,opts)=>{
+    const u=String(url);
+    if(u.includes('/messages?')&&decodeURIComponent(u).includes('from:mailer-daemon'))return new Response(JSON.stringify({messages:[{id:'dsn'}]}));
+    if(u.includes('/messages/dsn?'))return new Response(JSON.stringify({id:'dsn',threadId:correlated?'thread1':'other-thread',internalDate:String(Date.parse(sentAt)+1000),labelIds:['INBOX'],payload:{headers:[{name:'From',value:'MAILER-DAEMON@example.com'},{name:'Content-Type',value:'multipart/report; report-type=delivery-status'}]}}));
+    return fake.fetch(url,opts);
+   };
+   if(correlated){
+    await syncGmail(env,suppress);
+    assert.equal(db.prepare('SELECT reason FROM email_suppressions').get().reason,'bounce');
+    assert.equal(db.prepare("SELECT COUNT(*) n FROM outbound_messages_v2 WHERE status='queued'").get().n,0);
+   }else{
+    env.OUTBOUND_GMAIL_TESTED='true';
+    await assert.rejects(runGmail(env,renderTemplate,suppress),/Delivery failure needs review/);
+    assert.equal(db.prepare('SELECT paused FROM outbound_settings').get().paused,1);
+    assert.equal(db.prepare('SELECT COUNT(*) n FROM email_suppressions').get().n,0);
+   }
+   assert.equal(fake.sends,1);
+  }finally{globalThis.fetch=saved;db.close();}
+ }
 });
 
 test('controlled Gmail test stays paused, sends once, detects reply and records opt-out',async()=>{
