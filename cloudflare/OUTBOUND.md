@@ -1,4 +1,27 @@
-# AHI outbound pilot foundation
+# AHI outbound pilot
+
+## Current operation — October 6, 2026
+
+The direct Gmail engine is live after controlled send, reply, public opt-out,
+and SPF/DKIM/DMARC checks. Older dated sections below describe rollout history.
+The first approved batch contains five verified Arizona businesses; other
+prospects remain unapproved. Sector templates use only reviewed public facts
+for personalization, never internal fit notes.
+
+Outbound dispatch checks every five minutes and sends at most one message per
+run inside weekday 09:00–17:00 America/Phoenix hours. Estimate follow-ups retain
+their hourly schedule. The normal limit is five total emails per Phoenix day,
+including follow-ups and setup tests. A bounded allowance of one extra message
+applies only when OUTBOUND_LAUNCH_DATE matches that day and
+OUTBOUND_LAUNCH_EXTRA is exactly 1. The initial launch date is 2026-10-06, to
+count one setup test plus five prospect emails; it expires automatically.
+
+During the first batch only, the operator may briefly use a one-minute cron
+and restore the five-minute schedule after send acknowledgments. All normal
+lease, quota, business-hour, reply, suppression and uncertain-send controls
+remain active. Successful Gmail API acceptance records sent, not delivered.
+
+## Foundation rollout history
 
 This release provides a review dashboard at /admin/outbound/, protected API,
 public-source prospect records, reviewed enrollment, three message slots,
@@ -162,7 +185,7 @@ and API access without sending. It returns no tokens or message content.
 `OUTBOUND_GMAIL_TESTED=false` remains the deployment default. Change to true only after
 controlled send/reply/opt-out tests pass. Then activate through the authenticated CRM.
 
-Hourly scheduled execution sends at most one message per run, weekdays 9–17 Phoenix,
+Five-minute scheduled execution sends at most one message per run, weekdays 9–17 Phoenix,
 with a maximum 5 total messages/day initially. Follow-ups count toward this cap and are
 scheduled 7 and 17 days after the actual initial send. Any inbound reply, including an
 auto-reply, stops the sequence. Replies are checked both by tracked Gmail threads and
