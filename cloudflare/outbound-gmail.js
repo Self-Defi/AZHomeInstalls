@@ -18,7 +18,12 @@ async function session(env) {
  if(!env.OUTBOUND_GOOGLE_CLIENT_ID||!env.OUTBOUND_GOOGLE_CLIENT_SECRET||!env.OUTBOUND_GOOGLE_REFRESH_TOKEN) throw Error('Separate outbound Google OAuth credentials required');
  const response=await fetch('https://oauth2.googleapis.com/token',{method:'POST',headers:{'Content-Type':'application/x-www-form-urlencoded'},body:new URLSearchParams({client_id:env.OUTBOUND_GOOGLE_CLIENT_ID,client_secret:env.OUTBOUND_GOOGLE_CLIENT_SECRET,refresh_token:env.OUTBOUND_GOOGLE_REFRESH_TOKEN,grant_type:'refresh_token'}),signal:AbortSignal.timeout(15000)});
  const data=await response.json();
- if(!response.ok||!data.access_token) throw Error('Outbound Google authorization failed (HTTP '+response.status+')');
+ if(!response.ok||!data.access_token) {
+  // Never expose Google's free-form response: it may echo credential material.
+  const safeErrors=new Set(['invalid_client','invalid_grant','invalid_request','unauthorized_client','unsupported_grant_type','invalid_scope','deleted_client','org_internal','access_denied']);
+  const code=safeErrors.has(data.error)?'; '+data.error:'';
+  throw Error('Outbound Google authorization failed (HTTP '+response.status+code+')');
+ }
  const scopes=new Set(String(data.scope||'').split(' '));
  if(![SEND,READ,SETTINGS].every(s=>scopes.has(s))) throw Error('Outbound token must grant gmail.send, gmail.readonly and gmail.settings.basic');
  return data.access_token;
