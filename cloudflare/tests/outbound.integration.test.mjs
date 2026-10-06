@@ -7,6 +7,7 @@ function fixture(){
  const db=new DatabaseSync(':memory:');
  db.exec(readFileSync(new URL('../migrations/0001_leads.sql',import.meta.url),'utf8'));
  db.exec(readFileSync(new URL('../migrations/0002_outbound.sql',import.meta.url),'utf8'));
+ for(const name of ['0003_outbound_wave_v2.sql','0004_outbound_wave_plan.sql','0005_outbound_provider_state.sql']) db.exec(readFileSync(new URL('../migrations/'+name,import.meta.url),'utf8'));
  const wrap=(sql,values=[])=>({
   bind(...v){return wrap(sql,v)},
   async first(){return db.prepare(sql).get(...values)||null},
@@ -23,7 +24,7 @@ function fixture(){
  };
  return {db,call,env};
 }
-const prospect={organization:'Example Management',email:'Public@example.com',segment:'property_manager',city:'Phoenix',source_url:'https://example.com/team',fit_reason:'Your company lists Phoenix residential management.'};
+const prospect={organization:'Example Management',email:'Public@example.com',segment:'property_manager',city:'Phoenix',source_url:'https://example.com/team',fit_reason:'Your company lists Phoenix residential management.',solicitation_checked_at:'2026-10-06T15:00:00Z'};
 test('review enrollment is idempotent and manual replies cancel all pending steps',async()=>{
  const {db,call}=fixture();
  const created=await call('prospects','POST',prospect);assert.equal(created.status,201);
@@ -32,11 +33,11 @@ test('review enrollment is idempotent and manual replies cancel all pending step
  assert.equal((await call('prospects/'+id+'/approve','POST',{})).status,400);
  assert.equal((await call('prospects/'+id+'/approve','POST',{reviewed_by:'Jay'})).status,200);
  assert.equal((await call('prospects/'+id+'/approve','POST',{reviewed_by:'Jay'})).status,409);
- assert.equal(db.prepare('SELECT count(*) AS n FROM outbound_messages').get().n,3);
+ assert.equal(db.prepare('SELECT count(*) AS n FROM outbound_messages_v2').get().n,3);
  assert.equal((await call('preview')).data.messages.length,1);
  assert.equal((await call('prospects/'+id+'/reply','POST',{})).status,200);
  assert.equal((await call('preview')).data.messages.length,0);
- assert.equal(db.prepare("SELECT count(*) AS n FROM outbound_messages WHERE status='cancelled'").get().n,3);
+ assert.equal(db.prepare("SELECT count(*) AS n FROM outbound_messages_v2 WHERE status='cancelled'").get().n,3);
  db.close();
 });
 test('permanent suppression blocks reimport and stops existing lead followups',async()=>{
@@ -48,7 +49,7 @@ test('permanent suppression blocks reimport and stops existing lead followups',a
  assert.equal((await call('prospects/'+id+'/suppress','POST',{})).status,200);
  assert.equal((await call('prospects','POST',prospect)).status,409);
  await call('prospects/'+id+'/reply','POST',{});
- assert.equal(db.prepare('SELECT stage FROM outbound_prospects WHERE id=?').get(id).stage,'do_not_contact');
+ assert.equal(db.prepare('SELECT stage FROM outbound_prospects_v2 WHERE id=?').get(id).stage,'do_not_contact');
  const lead=db.prepare('SELECT unsubscribed,next_followup_at FROM leads').get();
  assert.equal(lead.unsubscribed,1);assert.equal(lead.next_followup_at,null);
  assert.equal((await call('preview')).data.messages.length,0);
@@ -61,7 +62,7 @@ test('signed unsubscribe GET is safe; POST permanently stops outreach',async()=>
  const id=(await call('prospects','POST',prospect)).data.id;
  await call('prospects/'+id+'/approve','POST',{reviewed_by:'Jay'});
  const {unsubscribeToken}=await import('../outbound-controls.js');
- const p=db.prepare('SELECT * FROM outbound_prospects WHERE id=?').get(id);
+ const p=db.prepare('SELECT * FROM outbound_prospects_v2 WHERE id=?').get(id);
  const token=await unsubscribeToken(env,p);
  const url=new URL('https://example.com/api/admin/outbound/unsubscribe?token='+token);
  assert.equal((await outboundApi(new Request(url),env,url)).status,200);
@@ -80,8 +81,8 @@ test('correlated events deduplicate and stop replies, auto replies, and complain
   const body={external_event_id:'event-1',message_id:1,event_type:type};
   assert.equal((await call('events','POST',body)).status,200);
   assert.equal((await call('events','POST',body)).data.duplicate,true);
-  assert.equal(db.prepare("SELECT count(*) AS n FROM outbound_messages WHERE status='cancelled'").get().n,3);
-  assert.equal(db.prepare('SELECT count(*) AS n FROM outbound_events WHERE external_event_id IS NOT NULL').get().n,1);
+  assert.equal(db.prepare("SELECT count(*) AS n FROM outbound_messages_v2 WHERE status='cancelled'").get().n,3);
+  assert.equal(db.prepare('SELECT count(*) AS n FROM outbound_events_v2 WHERE external_event_id IS NOT NULL').get().n,1);
   db.close();
  }
  const {db,call}=fixture();await call('prospects','POST',prospect);await call('prospects/1/approve','POST',{reviewed_by:'Jay'});
@@ -101,4 +102,24 @@ test('CRM referral attribution supports multiple jobs and counts distinct instal
  assert.equal((await call('settings','POST',{daily_cap:20})).status,200);
  assert.equal((await call('status')).data.settings.paused,1);
  db.close();
+});
+
+
+test('launch readiness exposes real blockers and never activates on credentials alone',async()=>{
+ const {db,call,env}=fixture();
+ const status=(await call('status')).data;
+ assert.ok(status.blockers.includes('Instantly API v2 key missing'));
+ assert.ok(status.blockers.includes('Mailbox approval pending'));
+ env.INSTANTLY_API_KEY='configured-test-key';env.INSTANTLY_CAMPAIGN_ID='test-campaign';
+ env.OUTBOUND_MAILBOX_APPROVED='true';env.OUTBOUND_MAILING_ADDRESS='Test business address';env.OUTBOUND_UNSUBSCRIBE_SECRET='sign'.repeat(10);
+ assert.equal((await call('settings','POST',{daily_cap:5,paused:false})).status,409);
+ assert.equal((await call('status')).data.settings.paused,1);
+ const id=(await call('prospects','POST',prospect)).data.id;
+ const savedFetch=globalThis.fetch;
+ try {
+  globalThis.fetch=async()=>new Response('No vendor solicitation',{headers:{'content-type':'text/html'}});
+  assert.equal((await call('prospects/'+id+'/recheck','POST',{})).data.status,'blocked');
+  assert.equal((await call('prospects/'+id+'/approve','POST',{reviewed_by:'Jay'})).status,409);
+  assert.equal(db.prepare('SELECT count(*) AS n FROM email_suppressions').get().n,1);
+ } finally {globalThis.fetch=savedFetch;db.close();}
 });

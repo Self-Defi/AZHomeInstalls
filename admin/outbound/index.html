@@ -8,8 +8,8 @@ body{font:16px system-ui;background:#f7f5ef;color:#171717;margin:0}main{max-widt
 <section class="panel"><h2>Connect securely</h2><p class="muted">Use the outbound admin credential configured in Cloudflare. It stays in memory for this page session.</p>
 <label>Outbound credential<input id="token" type="password" autocomplete="off"></label><label>Reviewer name<input id="reviewer" autocomplete="name"></label>
 <button id="connect">Connect</button><p id="feedback" role="status"></p></section>
-<section class="panel"><h2>Readiness</h2><div id="readiness">Connect to view readiness.</div></section>
-<section class="panel"><h2>Campaign control</h2><p>Controls new prospect launches only. Instantly will manage sequence follow-ups.</p><label>Daily cap<input id="dailyCap" type="number" min="1" max="20" value="20"></label><div class="actions"><button id="saveCap">Save limit & keep paused</button><button id="activateOas">Activate OAS</button><button id="pauseOas">Pause OAS</button></div></section>
+<section class="panel"><h2>Readiness</h2><div id="readiness">Connect to view readiness and remaining launch blockers.</div></section>
+<section class="panel"><h2>Campaign control</h2><p>The provider campaign must also limit total emails, including follow-ups. Sending remains blocked until its configuration is verified.</p><label>Daily cap<input id="dailyCap" type="number" min="1" max="20" value="20"></label><div class="actions"><button id="saveCap">Save limit & keep paused</button><button id="activateOas">Activate OAS</button><button id="pauseOas">Pause OAS</button></div></section>
 <section class="panel"><h2>Add a public business contact</h2><form id="prospectForm"><div class="grid">
 <label>Organization<input name="organization" required maxlength="1000"></label><label>Segment<select name="segment"><option value="property_manager">Property manager</option><option value="design_studio">Design studio</option><option value="home_stager">Home stager</option><option value="realtor">Realtor / real-estate team</option><option value="moving_company">Moving company</option><option value="builder_new_community">Builder / new community</option></select></label>
 <label>Contact name<input name="contact_name" maxlength="200"></label><label>Role<input name="role" maxlength="200"></label>
@@ -90,7 +90,7 @@ async function refresh(){
   card.append(text('p',p.personalization_hook||p.fit_reason));
   const link=document.createElement('a');link.href=p.source_url;link.textContent='View public source';link.target='_blank';link.rel='noopener noreferrer';card.append(link);
   const actions=document.createElement('div');actions.className='actions';
-  for(const [label,action] of [['Re-check solicitation','preflight'],['Approve & queue','approve'],['Record reply & stop','reply'],['Mark qualified','qualify'],['Link estimate request','link-lead'],['Do not contact','suppress']]){
+  for(const [label,action] of [['Recheck public source','recheck'],['Approve & queue','approve'],['Record reply & stop','reply'],['Mark qualified','qualify'],['Link estimate request','link-lead'],['Do not contact','suppress']]){
    if(action==='approve' && p.stage!=='prospect')continue;
    if(action==='preflight' && p.stage==='do_not_contact')continue;
    if(p.stage==='do_not_contact')continue;
@@ -104,9 +104,10 @@ async function refresh(){
 const solicitationInput=document.querySelector('[name="solicitation_checked_at"]');if(solicitationInput&&!solicitationInput.value){const d=new Date();d.setMinutes(d.getMinutes()-d.getTimezoneOffset());solicitationInput.value=d.toISOString().slice(0,16)}
 $('connect').onclick=()=>perform(async()=>{credential=$('token').value;$('token').value='';await refresh();feedback('Connected. Live sending remains disabled.')});
 $('saveCap').onclick=()=>perform(async()=>{await api('settings','POST',{daily_cap:Number($('dailyCap').value),paused:true});feedback('Daily limit saved. Sending remains paused.');await refresh()});
-$('activateOas').onclick=()=>perform(async()=>{if(!confirm('Activate OAS new-prospect launches? Readiness gates must all pass.'))return;await api('settings','POST',{daily_cap:Number($('dailyCap').value),paused:false});feedback('OAS activated.');await refresh()});
+$('activateOas').onclick=()=>perform(async()=>{if(!confirm('Activate OAS new-prospect launches? Readiness gates must all pass.'))return;await api('settings','POST',{daily_cap:Number($('dailyCap').value),paused:false});feedback('OAS settings updated.');await refresh()});
 $('pauseOas').onclick=()=>perform(async()=>{await api('settings','POST',{daily_cap:Number($('dailyCap').value),paused:true});feedback('OAS paused.');await refresh()});
 $('refresh').onclick=()=>perform(refresh);
 $('prospectForm').onsubmit=e=>{e.preventDefault();perform(async()=>{const body=Object.fromEntries(new FormData(e.target));body.wave_number=Number(body.wave_number);body.vendor_friendly=body.vendor_friendly==='1';body.solicitation_checked_at=new Date(body.solicitation_checked_at).toISOString();await api('prospects','POST',body);e.target.reset();e.target.wave_number.value='1';e.target.priority.value='B';e.target.vendor_friendly.value='0';const state=await refresh();feedback('Prospect added successfully. Total prospects: '+state.list.prospects.length+'.')})};
 $('preview').onclick=()=>perform(async()=>{const data=await api('preview');$('previews').replaceChildren();for(const m of data.messages)$('previews').append(text('h3',m.subject),text('pre',m.text));if(!data.messages.length)$('previews').append(text('p','No approved, eligible initial messages.'))});
 </script></body></html>
+

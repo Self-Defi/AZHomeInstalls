@@ -117,3 +117,20 @@ Sources:
 - https://www.law.cornell.edu/uscode/text/15/7707
 
 Run local checks with `npm test` in cloudflare.
+
+## October 6 launch audit
+
+Mailbox approval is confirmed. The deployed Worker has opt-out signing and
+webhook secrets. D1 contains 100 unapproved prospects; sending is paused.
+INSTANTLY_API_KEY and INSTANTLY_CAMPAIGN_ID are still missing, and the available
+Gmail connector belongs to cbp.cep@gmail.com rather than the Workspace mailbox.
+Do not mistake provider key presence for a tested campaign. Activation remains
+blocked until a provider campaign is inspected, its sender is verified as
+outreach@azhomeinstalls.com, and end-to-end reply/opt-out tests pass.
+
+POST prospects/:id/recheck fetches the public source with a ten-second timeout
+and refuses redirects. Explicit no-solicitation results permanently suppress
+the contact. Unreadable/redirected sources require manual review.
+Tests now apply migrations 0001 through 0005 and exercise the v2 tables.
+The current campaign sequence offsets are 0/7/17 days. The pilot limit is
+five total emails/day, including provider-managed follow-ups, before scaling.

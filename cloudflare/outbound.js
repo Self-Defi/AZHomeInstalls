@@ -1,6 +1,6 @@
 import { unsubscribe, unsubscribeUrl, recordEvent, stopForReply, linkLead, phoenixDate } from './outbound-controls.js';
 import { outboundProviderStatus, addProspectToInstantly, listInstantlyLeads, webhookAuthorized, normalizeInstantlyWebhook } from './outbound-provider.js';
-// Pilot foundation: no provider adapter and no live send path.
+// Provider synchronization is available; campaign launch remains gated.
 const SEGMENTS = new Set(['property_manager','design_studio','home_stager','realtor','moving_company','builder_new_community']);
 export const OFFSETS = [0,7,17];
 export const normalizeEmail = value => String(value || '').trim().toLowerCase();
@@ -41,7 +41,8 @@ async function solicitationPreflight(env,p) {
  try {
   const response=await fetch(p.source_url,{
    method:"GET",
-   redirect:"follow",
+   redirect:"error",
+   signal:AbortSignal.timeout(10000),
    headers:{"User-Agent":"AZHomeInstalls-Outreach-Compliance/1.0"}
   });
   const type=String(response.headers.get("content-type")||"").toLowerCase();
@@ -215,7 +216,13 @@ export async function outboundApi(request,env,url) {
   const resource=parts[3], id=Number(parts[4]), action=parts[5];
   if(resource==='status' && request.method==='GET') {
    const settings=await env.LEADS_DB.prepare('SELECT * FROM outbound_settings WHERE id=1').first();
-   return json({settings,live_sending:false,mode:'dry_run',blockers:['Approved outbound transport not configured','Email provider event connection not configured',...(!env.OUTBOUND_UNSUBSCRIBE_SECRET?['Opt-out signing secret missing']:[]),...(!env.OUTBOUND_MAILING_ADDRESS?['Mailing address missing']:[]),...(env.OUTBOUND_MAILBOX_APPROVED!=='true'?['Mailbox approval pending']:[])]});
+   const provider=outboundProviderStatus(env);
+   const blockers=[...provider.blockers,
+    ...(String(env.OUTBOUND_UNSUBSCRIBE_SECRET||'').length<32?['Opt-out signing secret missing or too short']:[]),
+    ...(!env.OUTBOUND_MAILING_ADDRESS?['Mailing address missing']:[]),
+    ...(env.OUTBOUND_MAILBOX_APPROVED!=='true'?['Mailbox approval pending']:[]),
+    'Campaign sending configuration has not been verified'];
+   return json({settings,provider,mailbox_approved:env.OUTBOUND_MAILBOX_APPROVED==='true',sending_identity:'outreach@azhomeinstalls.com',live_sending:false,mode:'preparation',blockers});
   }
   if(resource==='prospects' && !parts[4]) {
    if(request.method==='GET') {
@@ -251,10 +258,17 @@ export async function outboundApi(request,env,url) {
     await env.LEADS_DB.prepare("UPDATE outbound_prospects_v2 SET stage='qualified',updated_at=? WHERE id=? AND stage='replied'").bind(now(),id).run();
     await audit(env,id,'qualified');return json({ok:true});
    }
+   if(action==='recheck') {
+    const result=await solicitationPreflight(env,p);
+    if(result.status==='blocked') await suppress(env,p.email_normalized,'no_solicitation','public_source');
+    await audit(env,id,'solicitation_rechecked',result);
+    return json({ok:true,...result});
+   }
    if(action==='approve') {
     const reviewer=String(body.reviewed_by||'').trim();
     if(!reviewer || reviewer.length>200) return json({error:'Reviewer name required'},400);
     if(p.stage!=='prospect' || await env.LEADS_DB.prepare('SELECT 1 FROM email_suppressions WHERE email_normalized=?').bind(p.email_normalized).first()) return json({error:'Prospect cannot be enrolled'},409);
+    if(p.solicitation_status==='blocked') return json({error:'Public source prohibits solicitation'},409);
     const at=now();
     await env.LEADS_DB.batch([
      env.LEADS_DB.prepare("UPDATE outbound_prospects_v2 SET approved_at=?,reviewed_by=?,stage='queued',updated_at=? WHERE id=? AND stage='prospect'").bind(at,reviewer,at,id),
@@ -273,6 +287,7 @@ export async function outboundApi(request,env,url) {
         const provider=outboundProviderStatus(env);
         const blockers=[
           ...provider.blockers,
+          "Campaign sending configuration has not been verified",
           ...(!env.OUTBOUND_UNSUBSCRIBE_SECRET?["Opt-out signing secret missing"]:[]),
           ...(!env.OUTBOUND_MAILING_ADDRESS?["Mailing address missing"]:[]),
           ...(env.OUTBOUND_MAILBOX_APPROVED!=="true"?["Mailbox approval pending"]:[])
@@ -302,3 +317,4 @@ export async function outboundApi(request,env,url) {
   return json({error:request.method==='POST'?'Request failed validation or could not be saved':'Outbound request failed'},400);
  }
 }
+
