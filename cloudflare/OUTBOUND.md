@@ -134,3 +134,50 @@ the contact. Unreadable/redirected sources require manual review.
 Tests now apply migrations 0001 through 0005 and exercise the v2 tables.
 The current campaign sequence offsets are 0/7/17 days. The pilot limit is
 five total emails/day, including provider-managed follow-ups, before scaling.
+
+## Direct Gmail engine — October 6, 2026
+
+AHI now defaults to its own Gmail API transport instead of Instantly. Existing Calendar
+credentials and transactional Cloudflare Email code are unchanged.
+
+Configure these **separate Worker secrets**, never in GitHub or chat:
+- `OUTBOUND_GOOGLE_CLIENT_ID`
+- `OUTBOUND_GOOGLE_CLIENT_SECRET`
+- `OUTBOUND_GOOGLE_REFRESH_TOKEN`
+
+Enable Gmail API in your Google Cloud project. Use a Workspace-internal OAuth app
+where available and authorize `johnj@azhomeinstalls.com` with offline access for:
+`gmail.send`, `gmail.readonly`, `gmail.settings.basic` (full scope URL prefix:
+`https://www.googleapis.com/auth/`). Keep Calendar refresh-token authorization intact.
+Use an OAuth authorization-code flow or Google's OAuth Playground with your own OAuth
+client credentials. Do not use the Playground's default client for a permanent token.
+The mailbox must list `outreach@azhomeinstalls.com` as an accepted Gmail Send As identity.
+Receiving mail at an alias alone does not establish this.
+
+Migration: `0006_outbound_gmail.sql` adds thread correlation and a processing lease;
+it deliberately pauses sending and sets the pilot daily cap to 5.
+
+Authenticated `GET /api/admin/outbound/gmail-check` verifies mailbox identity, alias,
+and API access without sending. It returns no tokens or message content.
+`OUTBOUND_GMAIL_TESTED=false` remains the deployment default. Change to true only after
+controlled send/reply/opt-out tests pass. Then activate through the authenticated CRM.
+
+Hourly scheduled execution sends at most one message per run, weekdays 9–17 Phoenix,
+with a maximum 5 total messages/day initially. Follow-ups count toward this cap and are
+scheduled 7 and 17 days after the actual initial send. Any inbound reply, including an
+auto-reply, stops the sequence. Replies are checked both by tracked Gmail threads and
+by exact contact sender since send time. Read failures prevent further sends.
+Permanent suppression remains in D1 and applies to initial messages and follow-ups.
+
+Uncertain send outcomes remain claimed, consume reserved capacity, and pause outreach.
+Never retry automatically: reconcile Gmail Sent and update the record under admin review.
+The Gmail API has no send idempotency guarantee. A successful API response records
+**sent**, not delivered. Delivery/inbox placement is unknown without additional evidence.
+Delivery-status notifications correlated into tracked threads trigger suppression;
+bounces arriving in unrelated threads need manual reconciliation before reactivation.
+
+Live acceptance checklist: correct From/Reply-To; SPF/DKIM/DMARC header results on a
+controlled recipient; external access to opt-out URL without Cloudflare Access login;
+POST opt-out suppression; reply and auto-reply cancellation; simulated read failure,
+ambiguous send, daily cap, and pause. Confirm no unrelated campaign mail is queued.
+No claim of live readiness should be made before these checks pass.

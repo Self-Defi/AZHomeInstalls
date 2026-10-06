@@ -1,3 +1,4 @@
+import { gmailConfiguration, checkGmail, syncGmail, runGmail } from './outbound-gmail.js';
 import { unsubscribe, unsubscribeUrl, recordEvent, stopForReply, linkLead, phoenixDate } from './outbound-controls.js';
 import { outboundProviderStatus, addProspectToInstantly, listInstantlyLeads, webhookAuthorized, normalizeInstantlyWebhook } from './outbound-provider.js';
 // Provider synchronization is available; campaign launch remains gated.
@@ -140,7 +141,8 @@ async function preview(env) {
 
 export async function syncOutboundProvider(env) {
  if(!env.LEADS_DB) return {ok:false,reason:"database_unavailable"};
- const provider=outboundProviderStatus(env);
+ if((env.OUTBOUND_PROVIDER||'gmail')==='gmail') return runGmail(env,renderTemplate,suppress);
+ const provider=(env.OUTBOUND_PROVIDER||'gmail')==='gmail'?gmailConfiguration(env):outboundProviderStatus(env);
  if(!provider.configured) return {ok:false,reason:"provider_not_configured",blockers:provider.blockers};
 
  const {results:prospects=[]}=await env.LEADS_DB.prepare(
@@ -214,15 +216,16 @@ export async function outboundApi(request,env,url) {
  try {
   const parts=url.pathname.split('/').filter(Boolean);
   const resource=parts[3], id=Number(parts[4]), action=parts[5];
+  if(resource==='gmail-check' && request.method==='GET') return json(await checkGmail(env));
   if(resource==='status' && request.method==='GET') {
    const settings=await env.LEADS_DB.prepare('SELECT * FROM outbound_settings WHERE id=1').first();
-   const provider=outboundProviderStatus(env);
+   const provider=(env.OUTBOUND_PROVIDER||'gmail')==='gmail'?gmailConfiguration(env):outboundProviderStatus(env);
    const blockers=[...provider.blockers,
     ...(String(env.OUTBOUND_UNSUBSCRIBE_SECRET||'').length<32?['Opt-out signing secret missing or too short']:[]),
     ...(!env.OUTBOUND_MAILING_ADDRESS?['Mailing address missing']:[]),
     ...(env.OUTBOUND_MAILBOX_APPROVED!=='true'?['Mailbox approval pending']:[]),
-    'Campaign sending configuration has not been verified'];
-   return json({settings,provider,mailbox_approved:env.OUTBOUND_MAILBOX_APPROVED==='true',sending_identity:'outreach@azhomeinstalls.com',live_sending:false,mode:'preparation',blockers});
+    ...((env.OUTBOUND_PROVIDER||'gmail')!=='gmail'?['Campaign sending configuration has not been verified']:[])];
+   return json({settings,provider,mailbox_approved:env.OUTBOUND_MAILBOX_APPROVED==='true',sending_identity:'outreach@azhomeinstalls.com',live_sending:blockers.length===0&&!settings.paused,mode:blockers.length===0?'ready':'preparation',blockers});
   }
   if(resource==='prospects' && !parts[4]) {
    if(request.method==='GET') {
@@ -284,10 +287,12 @@ export async function outboundApi(request,env,url) {
       if (!Number.isInteger(cap) || cap < 1 || cap > 20) return json({ error: "Daily cap must be 1–20" }, 400);
       const requestedPaused = body.paused === false ? 0 : 1;
       if(requestedPaused===0){
-        const provider=outboundProviderStatus(env);
+        const checked=await checkGmail(env);
+        if(!checked.authorized) return json({error:"Gmail authorization verification failed",blockers:checked.blockers},409);
+        const provider=(env.OUTBOUND_PROVIDER||'gmail')==='gmail'?gmailConfiguration(env):outboundProviderStatus(env);
         const blockers=[
           ...provider.blockers,
-          "Campaign sending configuration has not been verified",
+          ...((env.OUTBOUND_PROVIDER||'gmail')!=='gmail'?["Campaign sending configuration has not been verified"]:[]),
           ...(!env.OUTBOUND_UNSUBSCRIBE_SECRET?["Opt-out signing secret missing"]:[]),
           ...(!env.OUTBOUND_MAILING_ADDRESS?["Mailing address missing"]:[]),
           ...(env.OUTBOUND_MAILBOX_APPROVED!=="true"?["Mailbox approval pending"]:[])

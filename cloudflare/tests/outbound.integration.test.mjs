@@ -7,7 +7,7 @@ function fixture(){
  const db=new DatabaseSync(':memory:');
  db.exec(readFileSync(new URL('../migrations/0001_leads.sql',import.meta.url),'utf8'));
  db.exec(readFileSync(new URL('../migrations/0002_outbound.sql',import.meta.url),'utf8'));
- for(const name of ['0003_outbound_wave_v2.sql','0004_outbound_wave_plan.sql','0005_outbound_provider_state.sql']) db.exec(readFileSync(new URL('../migrations/'+name,import.meta.url),'utf8'));
+ for(const name of ['0003_outbound_wave_v2.sql','0004_outbound_wave_plan.sql','0005_outbound_provider_state.sql','0006_outbound_gmail.sql']) db.exec(readFileSync(new URL('../migrations/'+name,import.meta.url),'utf8'));
  const wrap=(sql,values=[])=>({
   bind(...v){return wrap(sql,v)},
   async first(){return db.prepare(sql).get(...values)||null},
@@ -108,7 +108,7 @@ test('CRM referral attribution supports multiple jobs and counts distinct instal
 test('launch readiness exposes real blockers and never activates on credentials alone',async()=>{
  const {db,call,env}=fixture();
  const status=(await call('status')).data;
- assert.ok(status.blockers.includes('Instantly API v2 key missing'));
+ assert.ok(status.blockers.includes('OUTBOUND_GOOGLE_REFRESH_TOKEN missing'));
  assert.ok(status.blockers.includes('Mailbox approval pending'));
  env.INSTANTLY_API_KEY='configured-test-key';env.INSTANTLY_CAMPAIGN_ID='test-campaign';
  env.OUTBOUND_MAILBOX_APPROVED='true';env.OUTBOUND_MAILING_ADDRESS='Test business address';env.OUTBOUND_UNSUBSCRIBE_SECRET='sign'.repeat(10);
@@ -122,4 +122,63 @@ test('launch readiness exposes real blockers and never activates on credentials 
   assert.equal((await call('prospects/'+id+'/approve','POST',{reviewed_by:'Jay'})).status,409);
   assert.equal(db.prepare('SELECT count(*) AS n FROM email_suppressions').get().n,1);
  } finally {globalThis.fetch=savedFetch;db.close();}
+});
+
+import { runGmail, buildMime } from '../outbound-gmail.js';
+import { renderTemplate, suppress } from '../outbound.js';
+function gmailEnv(env){Object.assign(env,{OUTBOUND_GOOGLE_CLIENT_ID:'id',OUTBOUND_GOOGLE_CLIENT_SECRET:'secret',OUTBOUND_GOOGLE_REFRESH_TOKEN:'refresh',OUTBOUND_GMAIL_TESTED:'true',OUTBOUND_MAILBOX_APPROVED:'true',OUTBOUND_MAILING_ADDRESS:'Test mailing address',OUTBOUND_UNSUBSCRIBE_SECRET:'test'.repeat(10)});}
+function gmailMock({failSend=false,incoming=false,wrongIdentity=false}={}){
+ let sends=0;
+ const fetch=async(url,opts={})=>{
+  const u=String(url);let data={};
+  if(u.endsWith('/token'))data={access_token:'token',scope:['send','readonly','settings.basic'].map(s=>'https://www.googleapis.com/auth/gmail.'+s).join(' ')};
+  else if(u.endsWith('/profile'))data={emailAddress:wrongIdentity?'wrong@gmail.com':'johnj@azhomeinstalls.com'};
+  else if(u.endsWith('/settings/sendAs'))data={sendAs:[{sendAsEmail:'outreach@azhomeinstalls.com',verificationStatus:'accepted'}]};
+  else if(u.includes('/threads/'))data={messages:incoming?[{id:'reply1',internalDate:String(Date.now()+1000),labelIds:['INBOX'],payload:{headers:[{name:'From',value:'public@example.com'}]}}]:[]};
+  else if(u.endsWith('/messages/send')){sends++;if(failSend)throw Error('timeout after acceptance');data={id:'sent'+sends,threadId:'thread1'};}
+  return new Response(JSON.stringify(data));
+ };
+ return {fetch,get sends(){return sends}};
+}
+test('Gmail cap includes all sequence messages and ambiguous sends pause without retry',async()=>{
+ const {db,call,env}=fixture();gmailEnv(env);const saved=globalThis.fetch;const oldNow=Date.now;
+ try{
+  Date.now=()=>Date.parse('2026-10-06T17:00:00Z');
+  const id=(await call('prospects','POST',prospect)).data.id;await call('prospects/'+id+'/approve','POST',{reviewed_by:'Jay'});
+  db.exec("UPDATE outbound_prospects_v2 SET solicitation_status='clear';UPDATE outbound_settings SET paused=0,daily_cap=1");
+  const fake=gmailMock();globalThis.fetch=fake.fetch;
+  assert.equal((await runGmail(env,renderTemplate,suppress)).sent,1);
+  assert.equal(db.prepare("SELECT sent FROM outbound_daily_limits").get().sent,1);
+  assert.ok(db.prepare('SELECT due_at FROM outbound_messages_v2 WHERE step=1').get().due_at);
+  db.exec("UPDATE outbound_messages_v2 SET due_at='2020-01-01' WHERE step=1");
+  assert.equal((await runGmail(env,renderTemplate,suppress)).reason,'daily_cap');assert.equal(fake.sends,1);
+  db.exec('UPDATE outbound_settings SET daily_cap=2');globalThis.fetch=gmailMock({failSend:true}).fetch;
+  await assert.rejects(runGmail(env,renderTemplate,suppress),/uncertain/);
+  assert.equal(db.prepare('SELECT paused FROM outbound_settings').get().paused,1);
+  assert.equal(db.prepare('SELECT status FROM outbound_messages_v2 WHERE step=1').get().status,'claimed');
+  db.exec('UPDATE outbound_settings SET paused=0');globalThis.fetch=fake.fetch;
+  await runGmail(env,renderTemplate,suppress);assert.equal(fake.sends,1);
+ }finally{globalThis.fetch=saved;Date.now=oldNow;db.close();}
+});
+test('Gmail rejects wrong account and inbound replies cancel queued followups before send',async()=>{
+ const {db,call,env}=fixture();gmailEnv(env);const saved=globalThis.fetch;const oldNow=Date.now;
+ try{
+  Date.now=()=>Date.parse('2026-10-06T17:00:00Z');
+  globalThis.fetch=gmailMock({wrongIdentity:true}).fetch;
+  assert.equal((await call('gmail-check')).data.authorized,false);
+  const id=(await call('prospects','POST',prospect)).data.id;await call('prospects/'+id+'/approve','POST',{reviewed_by:'Jay'});
+  db.exec("UPDATE outbound_settings SET paused=0;UPDATE outbound_prospects_v2 SET solicitation_status='clear'");
+  globalThis.fetch=gmailMock().fetch;await runGmail(env,renderTemplate,suppress);
+  // Simulate an incoming reply later than the recorded send.
+  Date.now=()=>Date.now.realTime;Date.now.realTime=new Date().getTime()+60000;
+  const fake=gmailMock({incoming:true});globalThis.fetch=fake.fetch;
+  await runGmail(env,renderTemplate,suppress);
+  assert.equal(db.prepare('SELECT stage FROM outbound_prospects_v2').get().stage,'replied');
+  assert.equal(db.prepare("SELECT count(*) n FROM outbound_messages_v2 WHERE status='cancelled'").get().n,2);assert.equal(fake.sends,0);
+ }finally{globalThis.fetch=saved;Date.now=oldNow;db.close();}
+});
+test('MIME encodes Unicode safely and rejects header injection',()=>{
+ const args={to:'public@example.com',subject:'ADV: Installation — AHI',text:'Hello 👋',messageId:'ahi-1@azhomeinstalls.com',optout:'https://azhomeinstalls.com/api/admin/outbound/unsubscribe?token=test'};
+ const mime=Buffer.from(buildMime(args),'base64url').toString();assert.match(mime,/List-Unsubscribe-Post: List-Unsubscribe=One-Click/);assert.match(mime,/From: AZHomeInstalls <outreach@azhomeinstalls.com>/);
+ assert.throws(()=>buildMime({...args,subject:'Test\r\nBcc: attacker@example.com'}),/header/);
 });

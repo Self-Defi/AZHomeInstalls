@@ -1,0 +1,144 @@
+// AHI-owned Gmail transport. Separate refresh token; never borrow Calendar authorization.
+import { phoenixDate, followupDue, unsubscribeUrl, stopForReply } from './outbound-controls.js';
+const API='https://gmail.googleapis.com/gmail/v1/users/me';
+const SEND='https://www.googleapis.com/auth/gmail.send';
+const READ='https://www.googleapis.com/auth/gmail.readonly';
+const SETTINGS='https://www.googleapis.com/auth/gmail.settings.basic';
+const at=()=>new Date().toISOString();
+export function gmailConfiguration(env) {
+ const blockers=[];
+ for(const name of ['OUTBOUND_GOOGLE_CLIENT_ID','OUTBOUND_GOOGLE_CLIENT_SECRET','OUTBOUND_GOOGLE_REFRESH_TOKEN']) if(!env[name]) blockers.push(name+' missing');
+ if(String(env.OUTBOUND_UNSUBSCRIBE_SECRET||'').length<32) blockers.push('Opt-out signing secret missing or too short');
+ if(!env.OUTBOUND_MAILING_ADDRESS) blockers.push('Mailing address missing');
+ if(env.OUTBOUND_MAILBOX_APPROVED!=='true') blockers.push('Mailbox approval pending');
+ if(env.OUTBOUND_GMAIL_TESTED!=='true') blockers.push('Gmail send/reply/opt-out acceptance tests pending');
+ return {provider:'gmail',configured:blockers.length===0,blockers};
+}
+async function session(env) {
+ if(!env.OUTBOUND_GOOGLE_CLIENT_ID||!env.OUTBOUND_GOOGLE_CLIENT_SECRET||!env.OUTBOUND_GOOGLE_REFRESH_TOKEN) throw Error('Separate outbound Google OAuth credentials required');
+ const response=await fetch('https://oauth2.googleapis.com/token',{method:'POST',headers:{'Content-Type':'application/x-www-form-urlencoded'},body:new URLSearchParams({client_id:env.OUTBOUND_GOOGLE_CLIENT_ID,client_secret:env.OUTBOUND_GOOGLE_CLIENT_SECRET,refresh_token:env.OUTBOUND_GOOGLE_REFRESH_TOKEN,grant_type:'refresh_token'}),signal:AbortSignal.timeout(15000)});
+ const data=await response.json();
+ if(!response.ok||!data.access_token) throw Error('Outbound Google authorization failed (HTTP '+response.status+')');
+ const scopes=new Set(String(data.scope||'').split(' '));
+ if(![SEND,READ,SETTINGS].every(s=>scopes.has(s))) throw Error('Outbound token must grant gmail.send, gmail.readonly and gmail.settings.basic');
+ return data.access_token;
+}
+async function request(token,path,options={}) {
+ const r=await fetch(API+path,{...options,headers:{Authorization:'Bearer '+token,'Content-Type':'application/json',...(options.headers||{})},signal:AbortSignal.timeout(15000)});
+ const data=await r.json();
+ if(!r.ok) throw Error('Gmail API HTTP '+r.status);
+ return data;
+}
+async function identity(token) {
+ const profile=await request(token,'/profile');
+ if(profile.emailAddress?.toLowerCase()!=='johnj@azhomeinstalls.com') throw Error('Outbound OAuth must belong to johnj@azhomeinstalls.com');
+ const aliases=await request(token,'/settings/sendAs');
+ if(!aliases.sendAs?.some(a=>a.sendAsEmail?.toLowerCase()==='outreach@azhomeinstalls.com'&&a.verificationStatus==='accepted')) throw Error('outreach@azhomeinstalls.com must be an accepted Gmail Send As identity');
+ return profile;
+}
+export async function checkGmail(env) {
+ const configuration=gmailConfiguration(env);
+ try {
+  const token=await session(env);const profile=await identity(token);
+  await request(token,'/messages?maxResults=1');
+  return {...configuration,authorized:true,mailbox:profile.emailAddress,sender:'outreach@azhomeinstalls.com'};
+ }catch(e){return {...configuration,authorized:false,blockers:[...configuration.blockers,e.message]};}
+}
+function base64(value){return btoa(String.fromCharCode(...new TextEncoder().encode(value)));}
+export function buildMime({to,subject,text,messageId,optout,replyToId}) {
+ for(const value of [to,subject,messageId,optout,replyToId||'']) if(/[\r\n]/.test(value)) throw Error('Invalid mail header');
+ if(!/^[^\s<>@]+@[^\s<>@]+\.[^\s<>@]+$/.test(to)) throw Error('Invalid recipient');
+ const headers=['From: AZHomeInstalls <outreach@azhomeinstalls.com>','Reply-To: outreach@azhomeinstalls.com','To: '+to,'Subject: =?UTF-8?B?'+base64(subject)+'?=','Date: '+new Date().toUTCString(),'Message-ID: <'+messageId+'>','MIME-Version: 1.0','Content-Type: text/plain; charset=UTF-8','Content-Transfer-Encoding: base64','List-Unsubscribe: <'+optout+'>','List-Unsubscribe-Post: List-Unsubscribe=One-Click'];
+ if(replyToId) headers.push('In-Reply-To: <'+replyToId+'>','References: <'+replyToId+'>');
+ const body=base64(text).match(/.{1,76}/g)?.join('\r\n')||'';
+ return base64(headers.join('\r\n')+'\r\n\r\n'+body).replace(/\+/g,'-').replace(/\//g,'_').replace(/=+$/,'');
+}
+const header=(m,name)=>m.payload?.headers?.find(h=>h.name.toLowerCase()===name)?.value||'';
+export function incomingAfterSend(message,sentAt) {
+ return !message.labelIds?.includes('SENT') && Number(message.internalDate)>=Date.parse(sentAt);
+}
+export async function syncGmail(env,suppress,tokenOverride) {
+ const token=tokenOverride||await session(env);await identity(token);
+ const {results:rows=[]}=await env.LEADS_DB.prepare("SELECT m.id,m.gmail_thread_id,m.sent_at,p.id AS prospect_id,p.email_normalized FROM outbound_messages_v2 m JOIN outbound_enrollments_v2 e ON e.id=m.enrollment_id JOIN outbound_prospects_v2 p ON p.id=e.prospect_id WHERE m.gmail_thread_id IS NOT NULL AND p.last_reply_at IS NULL AND p.stage NOT IN ('do_not_contact','converted') ORDER BY m.id LIMIT 501").all();
+ if(rows.length>500) throw Error('Reply scan capacity exceeded; sending blocked');
+ let replies=0;
+ const seen=new Set();
+ for(const row of rows){
+  if(seen.has(row.gmail_thread_id))continue;seen.add(row.gmail_thread_id);
+  const thread=await request(token,'/threads/'+encodeURIComponent(row.gmail_thread_id)+'?format=metadata&metadataHeaders=From&metadataHeaders=Auto-Submitted&metadataHeaders=Content-Type');
+  for(const message of thread.messages||[]){
+   if(!incomingAfterSend(message,row.sent_at))continue;
+   const external='gmail:'+message.id;
+   if(await env.LEADS_DB.prepare('SELECT 1 FROM outbound_events_v2 WHERE external_event_id=?').bind(external).first())continue;
+   const bounce=/mailer-daemon|postmaster/i.test(header(message,'From'))||/delivery-status/i.test(header(message,'Content-Type'));
+   if(bounce)await suppress(env,row.email_normalized,'bounce','gmail_thread');
+   else await stopForReply(env,row.prospect_id);
+   await env.LEADS_DB.prepare('INSERT OR IGNORE INTO outbound_events_v2(prospect_id,message_id,external_event_id,event_type,detail,created_at) VALUES(?,?,?,?,?,?)').bind(row.prospect_id,row.id,external,bounce?'hard_bounce':'reply',JSON.stringify({provider:'gmail',auto_reply:!!header(message,'Auto-Submitted')}),at()).run();
+   replies++;
+  }
+ }
+ const contacts=new Map();
+ for(const row of rows){if(!contacts.has(row.email_normalized))contacts.set(row.email_normalized,row);}
+ for(const [email,row] of contacts){
+  const q='from:'+email+' after:'+Math.floor(Date.parse(row.sent_at)/1000);
+  const list=await request(token,'/messages?maxResults=100&q='+encodeURIComponent(q));
+  if(list.nextPageToken)throw Error('Contact reply scan exceeds capacity; sending blocked');
+  for(const item of list.messages||[]){
+   const external='gmail:'+item.id;
+   if(await env.LEADS_DB.prepare('SELECT 1 FROM outbound_events_v2 WHERE external_event_id=?').bind(external).first())continue;
+   const message=await request(token,'/messages/'+encodeURIComponent(item.id)+'?format=metadata');
+   if(!incomingAfterSend(message,row.sent_at))continue;
+   await stopForReply(env,row.prospect_id);
+   await env.LEADS_DB.prepare('INSERT OR IGNORE INTO outbound_events_v2(prospect_id,message_id,external_event_id,event_type,detail,created_at) VALUES(?,?,?,?,?,?)').bind(row.prospect_id,row.id,external,'reply',JSON.stringify({provider:'gmail',new_thread:true}),at()).run();
+   replies++;
+  }
+ }
+ return {ok:true,checked:seen.size,replies};
+}
+export async function runGmail(env,renderTemplate,suppress) {
+ // A crashed send is uncertain. Never automatically re-send a claimed message.
+ if(!gmailConfiguration(env).configured)return {ok:false,reason:'configuration_pending'};
+ const db=env.LEADS_DB;const lease=crypto.randomUUID(),now=at();
+ const locked=await db.prepare('UPDATE outbound_settings SET gmail_lease=?,gmail_lease_until=? WHERE id=1 AND (gmail_lease_until IS NULL OR gmail_lease_until<?)').bind(lease,new Date(Date.now()+10*60000).toISOString(),now).run();
+ if(locked.meta.changes!==1)return {ok:false,reason:'busy'};
+ try {
+  const token=await session(env);await syncGmail(env,suppress,token);
+  await db.prepare('UPDATE outbound_settings SET gmail_last_sync_at=? WHERE id=1').bind(at()).run();
+  const settings=await db.prepare('SELECT * FROM outbound_settings WHERE id=1').first();
+  if(settings.paused)return {ok:true,reason:'paused'};
+  const local=new Date(Date.now()-7*3600000);
+  if([0,6].includes(local.getUTCDay())||local.getUTCHours()<9||local.getUTCHours()>=17)return {ok:true,reason:'outside_business_hours'};
+  const row=await db.prepare("SELECT m.*,p.id AS prospect_id,p.organization,p.contact_name,p.segment,p.personalization_hook,p.fit_reason,p.email_normalized,p.approved_at,p.last_reply_at,p.solicitation_status FROM outbound_messages_v2 m JOIN outbound_enrollments_v2 e ON e.id=m.enrollment_id JOIN outbound_prospects_v2 p ON p.id=e.prospect_id LEFT JOIN email_suppressions s ON s.email_normalized=p.email_normalized WHERE m.status='queued' AND e.status IN ('queued','active') AND p.approved_at IS NOT NULL AND p.last_reply_at IS NULL AND p.stage NOT IN ('do_not_contact','converted','qualified','replied') AND p.solicitation_status='clear' AND s.email_normalized IS NULL AND (m.step=0 OR m.due_at IS NOT NULL AND m.due_at<=?) ORDER BY m.step DESC,m.id LIMIT 1").bind(at()).first();
+  if(!row)return {ok:true,reason:'no_approved_due_messages'};
+  const day=phoenixDate();
+  await db.prepare('INSERT OR IGNORE INTO outbound_daily_limits(phoenix_date,cap) VALUES(?,?)').bind(day,settings.daily_cap).run();
+  const quota=await db.prepare('UPDATE outbound_daily_limits SET reserved=reserved+1,cap=? WHERE phoenix_date=? AND sent+reserved<?').bind(settings.daily_cap,day,settings.daily_cap).run();
+  if(quota.meta.changes!==1)return {ok:true,reason:'daily_cap'};
+  const optout=await unsubscribeUrl(env,{id:row.prospect_id,email_normalized:row.email_normalized});
+  const content=renderTemplate(row,row.step,{address:env.OUTBOUND_MAILING_ADDRESS,optout:'Unsubscribe: '+optout});
+  const messageId='ahi-outbound-'+row.id+'@azhomeinstalls.com';
+  const first=await db.prepare('SELECT gmail_thread_id,rfc_message_id,subject FROM outbound_messages_v2 WHERE enrollment_id=? AND step=0').bind(row.enrollment_id).first();
+  if(row.step && first?.subject) content.subject=first.subject;
+  const raw=buildMime({to:row.email_normalized,...content,messageId,optout,replyToId:row.step?first?.rfc_message_id:undefined});
+  const claim=await db.prepare("UPDATE outbound_messages_v2 SET status='claimed',attempts=attempts+1,claimed_until=?,subject=?,body_text=?,rfc_message_id=? WHERE id=? AND status='queued' AND EXISTS(SELECT 1 FROM outbound_settings WHERE id=1 AND paused=0 AND gmail_lease=?) AND NOT EXISTS(SELECT 1 FROM email_suppressions WHERE email_normalized=?) AND NOT EXISTS(SELECT 1 FROM outbound_prospects_v2 WHERE id=? AND last_reply_at IS NOT NULL)").bind(new Date(Date.now()+600000).toISOString(),content.subject,content.text,messageId,row.id,lease,row.email_normalized,row.prospect_id).run();
+  if(claim.meta.changes!==1){await db.prepare('UPDATE outbound_daily_limits SET reserved=reserved-1 WHERE phoenix_date=?').bind(day).run();return {ok:false,reason:'claim_cancelled'};}
+  try {
+   const sent=await request(token,'/messages/send',{method:'POST',body:JSON.stringify({raw,...(row.step&&first?.gmail_thread_id?{threadId:first.gmail_thread_id}:{})})});
+   if(!sent.id||!sent.threadId)throw Error('Send result lacks Gmail correlation');
+   const sentAt=at();
+   await db.batch([
+    db.prepare("UPDATE outbound_messages_v2 SET status='sent',sent_at=?,provider_message_id=?,gmail_thread_id=? WHERE id=?").bind(sentAt,sent.id,sent.threadId,row.id),
+    db.prepare('UPDATE outbound_daily_limits SET reserved=reserved-1,sent=sent+1 WHERE phoenix_date=?').bind(day),
+    db.prepare("UPDATE outbound_prospects_v2 SET stage=?,provider='gmail',updated_at=? WHERE id=? AND stage NOT IN ('do_not_contact','replied','converted','qualified')").bind(row.step?'follow_up':'sent',sentAt,row.prospect_id),
+    db.prepare("UPDATE outbound_enrollments_v2 SET status=CASE WHEN status='stopped' THEN status ELSE 'active' END,started_at=COALESCE(started_at,?) WHERE id=?").bind(sentAt,row.enrollment_id),
+    db.prepare('INSERT INTO outbound_events_v2(prospect_id,message_id,event_type,detail,created_at) VALUES(?,?,?,?,?)').bind(row.prospect_id,row.id,'sent',JSON.stringify({provider:'gmail'}),sentAt),
+    ...(row.step===0?[7,17].map((offset,i)=>db.prepare("UPDATE outbound_messages_v2 SET due_at=? WHERE enrollment_id=? AND step=? AND status='queued'").bind(followupDue(sentAt,offset),row.enrollment_id,i+1)):[])
+   ]);
+   return {ok:true,sent:1,message_id:row.id};
+  }catch(e){
+   await db.prepare('UPDATE outbound_messages_v2 SET last_error=? WHERE id=?').bind('Send outcome uncertain; reconcile Gmail Sent before any retry',row.id).run();
+   await db.prepare('UPDATE outbound_settings SET paused=1 WHERE id=1').run();
+   throw Error('Gmail send outcome uncertain; outreach paused for reconciliation');
+  }
+ } finally {await db.prepare('UPDATE outbound_settings SET gmail_lease=NULL,gmail_lease_until=NULL WHERE id=1 AND gmail_lease=?').bind(lease).run();}
+}
