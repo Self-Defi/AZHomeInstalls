@@ -1,4 +1,4 @@
-import { gmailConfiguration, checkGmail, syncGmail, runGmail } from './outbound-gmail.js';
+import { gmailConfiguration, checkGmail, syncGmail, runGmail, sendGmailTest, gmailTestStatus } from './outbound-gmail.js';
 import { unsubscribe, unsubscribeUrl, recordEvent, stopForReply, linkLead, phoenixDate } from './outbound-controls.js';
 import { outboundProviderStatus, addProspectToInstantly, listInstantlyLeads, webhookAuthorized, normalizeInstantlyWebhook } from './outbound-provider.js';
 // Provider synchronization is available; campaign launch remains gated.
@@ -217,6 +217,13 @@ export async function outboundApi(request,env,url) {
   const parts=url.pathname.split('/').filter(Boolean);
   const resource=parts[3], id=Number(parts[4]), action=parts[5];
   if(resource==='gmail-check' && request.method==='GET') return json(await checkGmail(env));
+  if(resource==='gmail-test-send' && request.method==='POST') {
+   try{return json(await sendGmailTest(env));}catch(e){
+    const safe=new Set(['Keep campaign paused; another operation may be running','Acceptance test sending is closed after launch approval','Test recipient is suppressed','Test already prepared. Check results; do not resend','Daily cap reached; no test sent','Test send outcome uncertain. Do not resend; inspect Gmail Sent']);
+    return json({error:safe.has(e.message)?e.message:'Test blocked. Recheck Workspace authorization and configuration.'},400);
+   }
+  }
+  if(resource==='gmail-test-results' && request.method==='POST') return json(await gmailTestStatus(env,suppress));
   if(resource==='status' && request.method==='GET') {
    const settings=await env.LEADS_DB.prepare('SELECT * FROM outbound_settings WHERE id=1').first();
    const provider=(env.OUTBOUND_PROVIDER||'gmail')==='gmail'?gmailConfiguration(env):outboundProviderStatus(env);

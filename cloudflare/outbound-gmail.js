@@ -147,3 +147,64 @@ export async function runGmail(env,renderTemplate,suppress) {
   }
  } finally {await db.prepare('UPDATE outbound_settings SET gmail_lease=NULL,gmail_lease_until=NULL WHERE id=1 AND gmail_lease=?').bind(lease).run();}
 }
+
+// One controlled acceptance message, fixed to the owner's selected external inbox.
+// It never opens campaign sending or marks acceptance complete.
+const TEST_RECIPIENT='discoveruroptions@gmail.com';
+const TEST_CAMPAIGN='gmail-acceptance-v1';
+export async function gmailTestStatus(env,suppress) {
+ const db=env.LEADS_DB;
+ const p=await db.prepare('SELECT p.* FROM outbound_prospects_v2 p JOIN outbound_enrollments_v2 e ON e.prospect_id=p.id WHERE e.campaign_version=? AND p.email_normalized=?').bind(TEST_CAMPAIGN,TEST_RECIPIENT).first();
+ if(!p)return {recipient:TEST_RECIPIENT,sent:false,reply_detected:false,unsubscribed:false};
+ await syncGmail(env,suppress);
+ const current=await db.prepare('SELECT * FROM outbound_prospects_v2 WHERE id=?').bind(p.id).first();
+ const m=await db.prepare('SELECT m.* FROM outbound_messages_v2 m JOIN outbound_enrollments_v2 e ON e.id=m.enrollment_id WHERE e.prospect_id=? AND m.step=0').bind(p.id).first();
+ const pending=await db.prepare("SELECT count(*) AS n FROM outbound_messages_v2 m JOIN outbound_enrollments_v2 e ON e.id=m.enrollment_id WHERE e.prospect_id=? AND m.step>0 AND m.status='queued'").bind(p.id).first();
+ const suppression=await db.prepare('SELECT reason FROM email_suppressions WHERE email_normalized=?').bind(TEST_RECIPIENT).first();
+ return {recipient:TEST_RECIPIENT,sent:m?.status==='sent',send_status:m?.status||'not_sent',reply_detected:!!current.last_reply_at,followups_cancelled:pending.n===0,unsubscribed:suppression?.reason==='unsubscribe',next:'Reply from the recipient inbox first, check results, then open the email unsubscribe link and confirm. Inbox placement and authentication headers require recipient inspection.'};
+}
+export async function sendGmailTest(env) {
+ const db=env.LEADS_DB, lease=crypto.randomUUID(), started=at();
+ const locked=await db.prepare('UPDATE outbound_settings SET gmail_lease=?,gmail_lease_until=? WHERE id=1 AND paused=1 AND (gmail_lease_until IS NULL OR gmail_lease_until<?)').bind(lease,new Date(Date.now()+600000).toISOString(),started).run();
+ if(locked.meta.changes!==1)throw Error('Keep campaign paused; another operation may be running');
+ try {
+  const blockers=gmailConfiguration(env).blockers.filter(b=>b!=='Gmail send/reply/opt-out acceptance tests pending');
+  if(blockers.length)throw Error(blockers.join('; '));
+  if(env.OUTBOUND_GMAIL_TESTED==='true')throw Error('Acceptance test sending is closed after launch approval');
+  if(await db.prepare('SELECT 1 FROM email_suppressions WHERE email_normalized=?').bind(TEST_RECIPIENT).first())throw Error('Test recipient is suppressed');
+  if(await db.prepare('SELECT 1 FROM outbound_prospects_v2 WHERE email_normalized=?').bind(TEST_RECIPIENT).first())throw Error('Test already prepared. Check results; do not resend');
+  const token=await session(env);await identity(token);
+  const created=await db.prepare("INSERT INTO outbound_prospects_v2(organization,domain,contact_name,email,email_normalized,segment,city,source_url,source_observed_at,fit_reason,solicitation_checked_at,stage,created_at,updated_at) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?)").bind('AHI controlled acceptance test','gmail.com','Jay',TEST_RECIPIENT,TEST_RECIPIENT,'property_manager','Owner test inbox','https://azhomeinstalls.com',started,'Owner supplied recipient for controlled testing',started,'sent',started,started).run();
+  const pid=created.meta.last_row_id;
+  const enrolled=await db.prepare("INSERT INTO outbound_enrollments_v2(prospect_id,campaign_version,status,stop_reason,created_at) VALUES(?,?,'stopped','acceptance_test',?)").bind(pid,TEST_CAMPAIGN,started).run();
+  const eid=enrolled.meta.last_row_id;
+  const optout=await unsubscribeUrl(env,{id:pid,email_normalized:TEST_RECIPIENT});
+  const subject='AHI outbound setup test — reply, then unsubscribe';
+  const text=['This is the controlled AZHomeInstalls outbound setup test requested by Jay.','', '1. Confirm this arrived and the sender is outreach@azhomeinstalls.com.', '2. Reply with: AHI test reply.', '3. In AHI Outbound, check test results before unsubscribing.', '4. Open the link below and press Unsubscribe, then check test results again.','', 'Unsubscribe: '+optout,'',env.OUTBOUND_MAILING_ADDRESS].join('\n');
+  const messageId='ahi-acceptance-'+pid+'@azhomeinstalls.com';
+  const raw=buildMime({to:TEST_RECIPIENT,subject,text,messageId,optout});
+  const inserted=await db.prepare("INSERT INTO outbound_messages_v2(enrollment_id,step,day_offset,idempotency_key,status,subject,body_text,rfc_message_id,attempts) VALUES(?,0,0,?,'claimed',?,?,?,1)").bind(eid,'acceptance:'+eid+':0',subject,text,messageId).run();
+  const mid=inserted.meta.last_row_id;
+  // These follow-ups can only be cancelled: enrollment is stopped and approval is absent.
+  await db.batch([1,2].map((step)=>db.prepare("INSERT INTO outbound_messages_v2(enrollment_id,step,day_offset,idempotency_key,status) VALUES(?,?,?,?,'queued')").bind(eid,step,step===1?7:17,'acceptance:'+eid+':'+step)));
+  const settings=await db.prepare('SELECT daily_cap FROM outbound_settings WHERE id=1').first();
+  const day=phoenixDate();
+  await db.prepare('INSERT OR IGNORE INTO outbound_daily_limits(phoenix_date,cap) VALUES(?,?)').bind(day,settings.daily_cap).run();
+  const reserved=await db.prepare('UPDATE outbound_daily_limits SET reserved=reserved+1 WHERE phoenix_date=? AND sent+reserved<?').bind(day,settings.daily_cap).run();
+  if(reserved.meta.changes!==1)throw Error('Daily cap reached; no test sent');
+  try {
+   const sent=await request(token,'/messages/send',{method:'POST',body:JSON.stringify({raw})});
+   if(!sent.id||!sent.threadId)throw Error('Missing send correlation');
+   const sentAt=at();
+   await db.batch([
+    db.prepare("UPDATE outbound_messages_v2 SET status='sent',sent_at=?,provider_message_id=?,gmail_thread_id=? WHERE id=?").bind(sentAt,sent.id,sent.threadId,mid),
+    db.prepare('UPDATE outbound_daily_limits SET reserved=reserved-1,sent=sent+1 WHERE phoenix_date=?').bind(day),
+    db.prepare('INSERT INTO outbound_events_v2(prospect_id,message_id,event_type,detail,created_at) VALUES(?,?,?,?,?)').bind(pid,mid,'sent',JSON.stringify({provider:'gmail',acceptance_test:true}),sentAt)
+   ]);
+   return {ok:true,recipient:TEST_RECIPIENT,message:'One test accepted by Gmail. Check recipient inbox; campaign remains paused.'};
+  }catch(e){
+   await db.prepare('UPDATE outbound_messages_v2 SET last_error=? WHERE id=?').bind('Test send outcome uncertain; inspect Gmail Sent before any retry',mid).run();
+   throw Error('Test send outcome uncertain. Do not resend; inspect Gmail Sent');
+  }
+ }finally{await db.prepare('UPDATE outbound_settings SET gmail_lease=NULL,gmail_lease_until=NULL WHERE id=1 AND gmail_lease=?').bind(lease).run();}
+}

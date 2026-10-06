@@ -182,3 +182,39 @@ test('MIME encodes Unicode safely and rejects header injection',()=>{
  const mime=Buffer.from(buildMime(args),'base64url').toString();assert.match(mime,/List-Unsubscribe-Post: List-Unsubscribe=One-Click/);assert.match(mime,/From: AZHomeInstalls <outreach@azhomeinstalls.com>/);
  assert.throws(()=>buildMime({...args,subject:'Test\r\nBcc: attacker@example.com'}),/header/);
 });
+
+test('controlled Gmail test stays paused, sends once, detects reply and records opt-out',async()=>{
+ const {db,call,env}=fixture();gmailEnv(env);env.OUTBOUND_GMAIL_TESTED='false';const saved=globalThis.fetch;
+ try{
+  const fake=gmailMock();globalThis.fetch=fake.fetch;
+  assert.equal((await call('gmail-test-send','POST',{})).data.ok,true);
+  assert.equal(fake.sends,1);
+  assert.equal(db.prepare('SELECT paused FROM outbound_settings').get().paused,1);
+  const p=db.prepare('SELECT * FROM outbound_prospects_v2').get();
+  assert.equal(p.email_normalized,'discoveruroptions@gmail.com');assert.equal(p.approved_at,null);
+  assert.equal(db.prepare('SELECT status FROM outbound_enrollments_v2').get().status,'stopped');
+  assert.equal((await call('gmail-test-send','POST',{})).status,400);assert.equal(fake.sends,1);
+  assert.equal((await call('gmail-test-results','POST',{})).data.reply_detected,false);
+  globalThis.fetch=gmailMock({incoming:true}).fetch;
+  const reply=(await call('gmail-test-results','POST',{})).data;
+  assert.equal(reply.reply_detected,true);assert.equal(reply.followups_cancelled,true);
+  const {unsubscribeUrl}=await import('../outbound-controls.js');
+  const url=new URL(await unsubscribeUrl(env,p));
+  const r=await outboundApi(new Request(url,{method:'POST'}),env,url);assert.equal(r.status,200);
+  assert.equal((await call('gmail-test-results','POST',{})).data.unsubscribed,true);
+  assert.equal(env.OUTBOUND_GMAIL_TESTED,'false');
+ }finally{globalThis.fetch=saved;db.close()}
+});
+test('controlled Gmail test fails closed when active and never retries uncertain send',async()=>{
+ const {db,call,env}=fixture();gmailEnv(env);env.OUTBOUND_GMAIL_TESTED='false';const saved=globalThis.fetch;
+ try{
+  const fake=gmailMock({failSend:true});globalThis.fetch=fake.fetch;
+  db.exec('UPDATE outbound_settings SET paused=0');
+  assert.equal((await call('gmail-test-send','POST',{})).status,400);assert.equal(fake.sends,0);
+  db.exec('UPDATE outbound_settings SET paused=1');
+  assert.match((await call('gmail-test-send','POST',{})).data.error,/uncertain/);
+  assert.equal((await call('gmail-test-send','POST',{})).status,400);assert.equal(fake.sends,1);
+  assert.equal(db.prepare('SELECT reserved FROM outbound_daily_limits').get().reserved,1);
+  assert.equal(db.prepare('SELECT status FROM outbound_messages_v2 WHERE step=0').get().status,'claimed');
+ }finally{globalThis.fetch=saved;db.close()}
+});
