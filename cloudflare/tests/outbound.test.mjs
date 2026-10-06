@@ -32,3 +32,22 @@ test('Phoenix day and follow-ups use local day boundaries and weekday windows',a
  assert.equal(followupDue('2026-10-01T17:00:00Z',9),'2026-10-12T17:00:00.000Z');
 });
 
+
+test('sector copy uses reviewed details without leaking internal fit notes',()=>{
+ for(const segment of ['property_manager','home_stager','design_studio','realtor','moving_company','builder_new_community']) {
+  const m=renderTemplate({...prospect,segment,personalization_hook:'I noticed your residential projects.',fit_reason:'INTERNAL_ONLY'},0,{address:'Address',optout:'Unsubscribe'});
+  assert.match(m.text,/Hi Example Homes team,/);
+  assert.match(m.text,/I’m Jay with AZHomeInstalls/);
+  assert.match(m.text,/I noticed your residential projects/);
+  assert.doesNotMatch(m.text,/INTERNAL_ONLY|starting-price/);
+ }
+ assert.throws(()=>renderTemplate({...prospect,segment:'unknown'},0,{}));
+});
+test('launch allowance expires after its explicit Phoenix date',async()=>{
+ const {effectiveDailyCap}=await import('../outbound-gmail.js');
+ const settings={daily_cap:5},env={OUTBOUND_LAUNCH_DATE:'2026-10-06',OUTBOUND_LAUNCH_EXTRA:'1'};
+ assert.equal(effectiveDailyCap(settings,env,'2026-10-06'),6);
+ assert.equal(effectiveDailyCap(settings,env,'2026-10-07'),5);
+ assert.equal(effectiveDailyCap(settings,{},'2026-10-06'),5);
+ assert.equal(effectiveDailyCap(settings,{...env,OUTBOUND_LAUNCH_EXTRA:'100'},'2026-10-06'),5);
+});

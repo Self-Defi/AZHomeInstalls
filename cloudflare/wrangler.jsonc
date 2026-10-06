@@ -35,7 +35,9 @@
     "FROM_EMAIL": "info@azhomeinstalls.com",
     "GOOGLE_CALENDAR_ID": "primary",
     "DEFAULT_JOB_MINUTES": "120",
-    "DEFAULT_BUFFER_MINUTES": "30"
+    "DEFAULT_BUFFER_MINUTES": "30",
+    "OUTBOUND_LAUNCH_DATE": "2026-10-06",
+    "OUTBOUND_LAUNCH_EXTRA": "1"
   },
   "d1_databases": [
     {
@@ -55,9 +57,7 @@
   },
   "triggers": {
     "crons": [
-      "0 * * * *"
+      "*/5 * * * *"
     ]
   }
 }
-
-

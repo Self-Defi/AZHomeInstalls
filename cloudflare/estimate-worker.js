@@ -818,7 +818,8 @@ async function handleEstimateResponseApi(request,env,url){
 export default {
   async scheduled(event, env, ctx) {
     ctx.waitUntil(Promise.all([
-      processDueFollowups(env),
+      // Keep estimate follow-ups hourly while outbound dispatch runs every five minutes.
+      new Date(event.scheduledTime).getUTCMinutes()===0 ? processDueFollowups(env) : Promise.resolve(),
       syncOutboundProvider(env).catch(error => {
         console.error("Outbound provider sync failed", { message: error?.message || String(error) });
       })
@@ -1030,3 +1031,4 @@ export default {
     }
   }
 };
+

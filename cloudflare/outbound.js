@@ -102,23 +102,23 @@ export async function authorized(request,env) {
 }
 export function renderTemplate(p,step,footer) {
  if(!Number.isInteger(step) || step<0 || step>2) throw Error('Invalid sequence step');
- const greeting = p.contact_name ? 'Hi '+p.contact_name+',' : 'Hello,';
- const offers = {
-  property_manager:'AZHomeInstalls provides residential installation support for residents, including TV mounting, cord concealing, shelving, and selected fixture installations.',
-  design_studio:'AZHomeInstalls provides installation support for residential design projects, including TV mounting, cord concealing, shelving, and selected fixture installations.',
-  home_stager:'AZHomeInstalls supports staging and move-ready projects with TV mounting, cord concealing, shelving, and selected residential installations.',
-  realtor:'AZHomeInstalls helps buyers and relocating households settle in with TV mounting, cord concealing, shelving, and selected home installations.',
-  moving_company:'AZHomeInstalls helps households finish the move with TV mounting, cord concealing, shelving, and selected home installations.',
-  builder_new_community:'AZHomeInstalls provides post-close residential installation support for new homeowners, including TV mounting, cord concealing, shelving, and selected fixture installations.'
+ const greeting = p.contact_name ? 'Hi '+p.contact_name+',' : 'Hi '+p.organization+' team,';
+ const company=p.organization;
+ const templates = {
+  property_manager: ['Installation support for your residents', "I’m Jay with AZHomeInstalls. We help Phoenix-area residents with TV mounting, cord concealing, shelving, and selected home installations.", `Would having a local installation contact be useful when residents at ${company} ask for help getting settled?`, 'If so, I can send a short service overview for your team.'],
+  home_stager: ['Installation help for staging projects', 'I’m Jay with AZHomeInstalls. We provide residential installation support, including TV mounting, cord concealing, and shelving.', `I’m reaching out to see whether ${company} could use a local installation contact when a staging project needs those finishing details handled.`, 'Would you like a short overview of the work we can help with?'],
+  design_studio: ['Installation support for residential projects', 'I’m Jay with AZHomeInstalls. We help with TV mounting, cord concealing, shelving, and selected residential installations.', `For ${company} projects involving those details, we’d welcome the opportunity to review the installation scope and provide an estimate.`, 'Would a short service overview be useful for your team?'],
+  realtor: ['A local installation contact for your buyers', 'I’m Jay with AZHomeInstalls. We help Phoenix-area homeowners get settled with TV mounting, cord concealing, shelving, and selected home installations.', 'Do your buyers ever ask for a local contact for that work after closing?', 'I can send a short service overview you can share when the need comes up.'],
+  moving_company: ['Helping customers finish their move', 'I’m Jay with AZHomeInstalls. After a move, homeowners often still need TVs mounted, cords concealed, or shelving installed.', 'We handle those residential installation tasks in the Phoenix area.', `Would a local installation contact be useful for ${company} customers who ask about help after delivery?`],
+  builder_new_community: ['Post-close installation help for homeowners', 'I’m Jay with AZHomeInstalls. We provide post-close installation help for Phoenix-area homeowners, including TV mounting, cord concealing, shelving, and selected home installations.', `Would ${company} find it useful to have a local installation contact to share with homeowners after closing?`, 'I can send a short service overview for your homeowner information materials.']
  };
- const offer = offers[p.segment] || offers.realtor;
- const subjects = ['Residential installation support for '+p.organization,'Following up on installation support','Final check-in on installation support'];
- const bodies = [
-  offer+'\n\n'+(p.personalization_hook || p.fit_reason)+'\n\nWould residential installation support be useful for your '+(p.segment==='property_manager'?'residents':p.segment==='builder_new_community'?'homeowners':'clients')+'?',
-  'Following up on my introduction. Would you like the AZHomeInstalls service and starting-price list for future residential installation requests?',
-  'This is my final check-in. If installation support becomes useful, you can reply here. I will close out this outreach sequence.'
- ];
- return {subject:'ADV: '+subjects[step],text:[greeting,'',bodies[step],'','AZHomeInstalls','https://azhomeinstalls.com/services/','Advertisement — Residential installation services.','Not a Licensed Contractor.',footer.address || '[MAILING ADDRESS REQUIRED]',footer.optout || '[UNSUBSCRIBE LINK REQUIRED]'].join('\n')};
+ const template=templates[p.segment];
+ if(!template) throw Error('Unsupported launch segment');
+ const subjects=[template[0],'Following up on installation support','Final check-in on installation support'];
+ // Only reviewed customer-facing details belong in copy; internal fit notes never do.
+ const initial=[template[1],p.personalization_hook,template[2],template[3]].filter(Boolean).join('\n\n');
+ const bodies=[initial,'Following up on my introduction. Would you like a short AZHomeInstalls service overview for future residential installation requests?','This is my final check-in. If installation support becomes useful, you can reply here. I will close out this outreach sequence.'];
+ return {subject:'ADV: '+subjects[step],text:[greeting,'',bodies[step],'','Jay','AZHomeInstalls','https://azhomeinstalls.com/services/','Advertisement — Residential installation services.','Not a Licensed Contractor.',footer.address || '[MAILING ADDRESS REQUIRED]',footer.optout || '[UNSUBSCRIBE LINK REQUIRED]'].join('\n')};
 }
 async function audit(env,id,type,detail={}) {
  await env.LEADS_DB.prepare('INSERT INTO outbound_events_v2(prospect_id,event_type,detail,created_at) VALUES(?,?,?,?)').bind(id,type,JSON.stringify(detail),now()).run();
