@@ -42,7 +42,7 @@ async function solicitationPreflight(env,p) {
  try {
   const response=await fetch(p.source_url,{
    method:"GET",
-   redirect:"error",
+   redirect:"manual",
    signal:AbortSignal.timeout(10000),
    headers:{"User-Agent":"AZHomeInstalls-Outreach-Compliance/1.0"}
   });
