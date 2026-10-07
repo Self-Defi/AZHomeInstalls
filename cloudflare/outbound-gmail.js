@@ -125,7 +125,7 @@ export function effectiveDailyCap(settings,env,day) {
  const extra=env.OUTBOUND_LAUNCH_DATE===day && env.OUTBOUND_LAUNCH_EXTRA==='1' ? 1 : 0;
  return Number(settings.daily_cap)+extra;
 }
-export async function runGmail(env,renderTemplate,suppress) {
+export async function runGmail(env,renderTemplate,suppress,prepareDaily) {
  // A crashed send is uncertain. Never automatically re-send a claimed message.
  if(!gmailConfiguration(env).configured)return {ok:false,reason:'configuration_pending'};
  const db=env.LEADS_DB;const lease=crypto.randomUUID(),now=at();
@@ -138,7 +138,9 @@ export async function runGmail(env,renderTemplate,suppress) {
   if(settings.paused)return {ok:true,reason:'paused'};
   const local=new Date(Date.now()-7*3600000);
   if([0,6].includes(local.getUTCDay())||local.getUTCHours()<9||local.getUTCHours()>=17)return {ok:true,reason:'outside_business_hours'};
-  const row=await db.prepare("SELECT m.*,p.id AS prospect_id,p.organization,p.contact_name,p.segment,p.personalization_hook,p.fit_reason,p.email_normalized,p.approved_at,p.last_reply_at,p.solicitation_status FROM outbound_messages_v2 m JOIN outbound_enrollments_v2 e ON e.id=m.enrollment_id JOIN outbound_prospects_v2 p ON p.id=e.prospect_id LEFT JOIN email_suppressions s ON s.email_normalized=p.email_normalized WHERE m.status='queued' AND e.status IN ('queued','active') AND p.approved_at IS NOT NULL AND p.last_reply_at IS NULL AND p.stage NOT IN ('do_not_contact','converted','qualified','replied') AND p.solicitation_status='clear' AND s.email_normalized IS NULL AND (m.step=0 OR m.due_at IS NOT NULL AND m.due_at<=?) ORDER BY m.step DESC,m.id LIMIT 1").bind(at()).first();
+  if(prepareDaily) await prepareDaily(env);
+  const newLimit=Math.max(1,Math.min(20,Number(env.OUTBOUND_NEW_DAILY_CAP||20)));
+  const row=await db.prepare("SELECT m.*,p.id AS prospect_id,p.organization,p.contact_name,p.segment,p.personalization_hook,p.fit_reason,p.email_normalized,p.approved_at,p.last_reply_at,p.solicitation_status FROM outbound_messages_v2 m JOIN outbound_enrollments_v2 e ON e.id=m.enrollment_id JOIN outbound_prospects_v2 p ON p.id=e.prospect_id LEFT JOIN email_suppressions s ON s.email_normalized=p.email_normalized WHERE m.status='queued' AND e.status IN ('queued','active') AND p.approved_at IS NOT NULL AND p.last_reply_at IS NULL AND p.stage NOT IN ('do_not_contact','converted','qualified','replied') AND p.solicitation_status='clear' AND s.email_normalized IS NULL AND (m.step<>0 OR (SELECT COUNT(*) FROM outbound_messages_v2 WHERE step=0 AND sent_at IS NOT NULL AND date(sent_at,'-7 hours')=?)<?) AND (m.step=0 OR m.due_at IS NOT NULL AND m.due_at<=?) ORDER BY m.step DESC,m.id LIMIT 1").bind(phoenixDate(),newLimit,at()).first();
   if(!row)return {ok:true,reason:'no_approved_due_messages'};
   const day=phoenixDate(),cap=effectiveDailyCap(settings,env,day);
   await db.prepare('INSERT OR IGNORE INTO outbound_daily_limits(phoenix_date,cap) VALUES(?,?)').bind(day,cap).run();

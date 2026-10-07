@@ -139,9 +139,32 @@ async function preview(env) {
  return Promise.all(results.map(async p=>({prospect_id:p.id,message_id:p.message_id,...renderTemplate(p,Number(p.step),{address:env.OUTBOUND_MAILING_ADDRESS,optout:env.OUTBOUND_UNSUBSCRIBE_SECRET ? 'Unsubscribe: '+await unsubscribeUrl(env,p) : undefined})})));
 }
 
+export async function prepareDailyProspects(env) {
+ if(env.OUTBOUND_AUTO_ENROLL_WAVE1!=='true') return;
+ const db=env.LEADS_DB, day=phoenixDate(), limit=Number(env.OUTBOUND_NEW_DAILY_CAP||5);
+ const used=await db.prepare("SELECT COUNT(*) AS n FROM outbound_messages_v2 WHERE step=0 AND (status IN ('queued','claimed') OR sent_at IS NOT NULL AND date(sent_at,'-7 hours')=?)").bind(day).first();
+ let slots=Math.max(0,limit-Number(used?.n||0));
+ if(!slots) return;
+ const {results:rows=[]}=await db.prepare("SELECT p.* FROM outbound_prospects_v2 p LEFT JOIN outbound_wave_plan w ON w.prospect_id=p.id LEFT JOIN email_suppressions s ON s.email_normalized=p.email_normalized WHERE p.stage='prospect' AND p.wave_number=1 AND p.source_observed_at<'2026-10-08' AND p.last_reply_at IS NULL AND p.solicitation_status IN ('reviewed','clear') AND s.email_normalized IS NULL AND NOT EXISTS(SELECT 1 FROM outbound_enrollments_v2 e WHERE e.prospect_id=p.id) ORDER BY CASE WHEN w.launch_day IS NULL THEN 999 ELSE w.launch_day END,w.send_order,p.priority,p.id LIMIT 8").all();
+ for(const p of rows) {
+  if(!slots) break;
+  const checked=await solicitationPreflight(env,p);
+  if(checked.status==='blocked') {await suppress(env,p.email_normalized,'no_solicitation','public_source');continue;}
+  if(checked.status!=='clear') continue;
+  const time=now();
+  await db.batch([
+   db.prepare("UPDATE outbound_prospects_v2 SET approved_at=?,reviewed_by='Jay: daily five authorization 2026-10-07',stage='queued',updated_at=? WHERE id=? AND stage='prospect' AND solicitation_status='clear' AND NOT EXISTS(SELECT 1 FROM email_suppressions WHERE email_normalized=?)").bind(time,time,p.id,p.email_normalized),
+   db.prepare("INSERT OR IGNORE INTO outbound_enrollments_v2(prospect_id,created_at) SELECT id,? FROM outbound_prospects_v2 WHERE id=? AND stage='queued' AND approved_at IS NOT NULL").bind(time,p.id),
+   ...OFFSETS.map((offset,step)=>db.prepare("INSERT OR IGNORE INTO outbound_messages_v2(enrollment_id,step,day_offset,idempotency_key) SELECT id,?,?,? FROM outbound_enrollments_v2 WHERE prospect_id=?").bind(step,offset,'wave-v1:'+p.id+':'+step,p.id))
+  ]);
+  await audit(env,p.id,'approved',{reviewer:'Jay',source:'authorized_daily_wave1',daily_new_limit:limit});
+  slots--;
+ }
+}
+
 export async function syncOutboundProvider(env) {
  if(!env.LEADS_DB) return {ok:false,reason:"database_unavailable"};
- if((env.OUTBOUND_PROVIDER||'gmail')==='gmail') return runGmail(env,renderTemplate,suppress);
+ if((env.OUTBOUND_PROVIDER||'gmail')==='gmail') return runGmail(env,renderTemplate,suppress,prepareDailyProspects);
  const provider=(env.OUTBOUND_PROVIDER||'gmail')==='gmail'?gmailConfiguration(env):outboundProviderStatus(env);
  if(!provider.configured) return {ok:false,reason:"provider_not_configured",blockers:provider.blockers};
 

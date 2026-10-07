@@ -30,6 +30,8 @@
     "OUTBOUND_MAILING_ADDRESS": "AZHomeInstalls, 929 N Val Vista Dr, Ste 109 PMB 644, Gilbert, AZ 85234",
     "OUTBOUND_MAILBOX_APPROVED": "true",
     "OUTBOUND_PROVIDER": "gmail",
+    "OUTBOUND_NEW_DAILY_CAP": "5",
+    "OUTBOUND_AUTO_ENROLL_WAVE1": "true",
     "OUTBOUND_GMAIL_TESTED": "true",
     "DESTINATION_EMAIL": "cbp.cep@gmail.com",
     "FROM_EMAIL": "info@azhomeinstalls.com",

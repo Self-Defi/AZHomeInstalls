@@ -126,6 +126,29 @@ test('launch readiness exposes real blockers and never activates on credentials 
 
 import { runGmail, buildMime, syncGmail } from '../outbound-gmail.js';
 import { renderTemplate, suppress } from '../outbound.js';
+import { prepareDailyProspects } from '../outbound.js';
+test('daily enrollment skips blocked sources, queues five once, and leaves capacity for followups',async()=>{
+ const {db,call,env}=fixture();gmailEnv(env);
+ const saved=globalThis.fetch, oldNow=Date.now;
+ try {
+  Date.now=()=>Date.parse('2026-10-07T17:00:00Z');
+  Object.assign(env,{OUTBOUND_AUTO_ENROLL_WAVE1:'true',OUTBOUND_NEW_DAILY_CAP:'5'});
+  for(let i=0;i<8;i++) await call('prospects','POST',{...prospect,organization:'Team '+i,email:'person'+i+'@example.com',source_url:'https://example.com/'+i});
+  db.exec("UPDATE outbound_settings SET paused=0,daily_cap=20;UPDATE outbound_prospects_v2 SET source_observed_at='2026-10-06',solicitation_status='reviewed'");
+  const fake=gmailMock();
+  globalThis.fetch=async(url,opts)=>String(url).startsWith('https://example.com/')?new Response(String(url).endsWith('/0')?'No vendor solicitation':'Residential services',{headers:{'content-type':'text/html'}}):fake.fetch(url,opts);
+  await prepareDailyProspects(env);await prepareDailyProspects(env);
+  assert.equal(db.prepare("SELECT COUNT(*) n FROM outbound_messages_v2 WHERE step=0 AND status='queued'").get().n,5);
+  assert.equal(db.prepare("SELECT stage FROM outbound_prospects_v2 WHERE email_normalized='person0@example.com'").get().stage,'do_not_contact');
+  for(let i=0;i<5;i++) assert.equal((await runGmail(env,renderTemplate,suppress,prepareDailyProspects)).sent,1);
+  assert.equal((await runGmail(env,renderTemplate,suppress,prepareDailyProspects)).reason,'no_approved_due_messages');
+  assert.equal(fake.sends,5);
+  db.exec("UPDATE outbound_messages_v2 SET due_at='2020-01-01' WHERE step=1");
+  assert.equal((await runGmail(env,renderTemplate,suppress,prepareDailyProspects)).sent,1);
+  assert.equal(fake.sends,6);
+  assert.equal(db.prepare("SELECT COUNT(*) n FROM outbound_messages_v2 WHERE step=0 AND sent_at IS NOT NULL").get().n,5);
+ } finally {globalThis.fetch=saved;Date.now=oldNow;db.close();}
+});
 function gmailEnv(env){Object.assign(env,{OUTBOUND_GOOGLE_CLIENT_ID:'id',OUTBOUND_GOOGLE_CLIENT_SECRET:'secret',OUTBOUND_GOOGLE_REFRESH_TOKEN:'refresh',OUTBOUND_GMAIL_TESTED:'true',OUTBOUND_MAILBOX_APPROVED:'true',OUTBOUND_MAILING_ADDRESS:'Test mailing address',OUTBOUND_UNSUBSCRIBE_SECRET:'test'.repeat(10)});}
 function gmailMock({failSend=false,incoming=false,wrongIdentity=false}={}){
  let sends=0;
