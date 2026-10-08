@@ -115,8 +115,8 @@ export function renderTemplate(p,step,footer) {
  const template=templates[p.segment];
  if(!template) throw Error('Unsupported launch segment');
  const subjects=[template[0],'Following up on installation support','Final check-in on installation support'];
- // Only reviewed customer-facing details belong in copy; internal fit notes never do.
- const initial=[template[1],p.personalization_hook,template[2],template[3]].filter(Boolean).join('\n\n');
+ // Imported research fields are internal evidence, never approved email copy.
+ const initial=[template[1],template[2],template[3]].join('\n\n');
  const bodies=[initial,'Following up on my introduction. Would you like a short AZHomeInstalls service overview for future residential installation requests?','This is my final check-in. If installation support becomes useful, you can reply here. I will close out this outreach sequence.'];
  return {subject:'ADV: '+subjects[step],text:[greeting,'',bodies[step],'','Jay','AZHomeInstalls','https://azhomeinstalls.com/services/','Advertisement — Residential installation services.','Not a Licensed Contractor.',footer.address || '[MAILING ADDRESS REQUIRED]',footer.optout || '[UNSUBSCRIBE LINK REQUIRED]'].join('\n')};
 }

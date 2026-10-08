@@ -33,13 +33,12 @@ test('Phoenix day and follow-ups use local day boundaries and weekday windows',a
 });
 
 
-test('sector copy uses reviewed details without leaking internal fit notes',()=>{
+test('all sector emails exclude imported research notes',()=>{
  for(const segment of ['property_manager','home_stager','design_studio','realtor','moving_company','builder_new_community']) {
-  const m=renderTemplate({...prospect,segment,personalization_hook:'I noticed your residential projects.',fit_reason:'INTERNAL_ONLY'},0,{address:'Address',optout:'Unsubscribe'});
+  const m=renderTemplate({...prospect,segment,personalization_hook:'Explicit vendor route; Property Services Manager contact is directly relevant.',fit_reason:'INTERNAL_ONLY'},0,{address:'Address',optout:'Unsubscribe'});
   assert.match(m.text,/Hi Example Homes team,/);
   assert.match(m.text,/I’m Jay with AZHomeInstalls/);
-  assert.match(m.text,/I noticed your residential projects/);
-  assert.doesNotMatch(m.text,/INTERNAL_ONLY|starting-price/);
+  assert.doesNotMatch(m.text,/Explicit vendor route|Property Services Manager|INTERNAL_ONLY|starting-price/);
  }
  assert.throws(()=>renderTemplate({...prospect,segment:'unknown'},0,{}));
 });
