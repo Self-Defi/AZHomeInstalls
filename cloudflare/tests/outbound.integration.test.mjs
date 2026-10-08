@@ -229,6 +229,9 @@ test('delivery scan suppresses correlated bounces and pauses on separate-thread 
     await assert.rejects(runGmail(env,renderTemplate,suppress),/Delivery failure needs review/);
     assert.equal(db.prepare('SELECT paused FROM outbound_settings').get().paused,1);
     assert.equal(db.prepare('SELECT COUNT(*) n FROM email_suppressions').get().n,0);
+    const pause=db.prepare("SELECT detail FROM outbound_events_v2 WHERE event_type='campaign_paused'").get();
+    assert.equal(JSON.parse(pause.detail).gmail_message_id,'dsn');
+    assert.equal(JSON.parse(pause.detail).reason,'unmatched_delivery_failure');
    }
    assert.equal(fake.sends,1);
   }finally{globalThis.fetch=saved;db.close();}
