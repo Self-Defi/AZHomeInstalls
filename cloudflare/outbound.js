@@ -102,7 +102,7 @@ export async function authorized(request,env) {
 }
 export function renderTemplate(p,step,footer) {
  if(!Number.isInteger(step) || step<0 || step>2) throw Error('Invalid sequence step');
- const greeting = p.contact_name ? 'Hi '+p.contact_name+',' : 'Hi '+p.organization+' team,';
+ const greeting = p.organization+',';
  const company=p.organization;
  const templates = {
   property_manager: ['Installation support for your residents', "I’m Jay with AZHomeInstalls. We help Phoenix-area residents with TV mounting, cord concealing, shelving, and selected home installations.", `Would having a local installation contact be useful when residents at ${company} ask for help getting settled?`, 'If so, I can send a short service overview for your team.'],
