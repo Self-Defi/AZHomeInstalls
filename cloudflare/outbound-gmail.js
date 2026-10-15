@@ -145,13 +145,18 @@ export async function runGmail(env,renderTemplate,suppress,prepareDaily) {
   const local=new Date(Date.now()-7*3600000);
   if([0,6].includes(local.getUTCDay())||local.getUTCHours()<9||local.getUTCHours()>=17)return {ok:true,reason:'outside_business_hours'};
   if(prepareDaily) await prepareDaily(env);
-  const newLimit=Math.max(1,Math.min(20,Number(env.OUTBOUND_NEW_DAILY_CAP||20)));
-  const row=await db.prepare("SELECT m.*,p.id AS prospect_id,p.organization,p.contact_name,p.segment,p.personalization_hook,p.fit_reason,p.email_normalized,p.approved_at,p.last_reply_at,p.solicitation_status FROM outbound_messages_v2 m JOIN outbound_enrollments_v2 e ON e.id=m.enrollment_id JOIN outbound_prospects_v2 p ON p.id=e.prospect_id LEFT JOIN email_suppressions s ON s.email_normalized=p.email_normalized WHERE m.status='queued' AND e.status IN ('queued','active') AND p.approved_at IS NOT NULL AND p.last_reply_at IS NULL AND p.stage NOT IN ('do_not_contact','converted','qualified','replied') AND p.solicitation_status='clear' AND s.email_normalized IS NULL AND (m.step<>0 OR (SELECT COUNT(*) FROM outbound_messages_v2 WHERE step=0 AND sent_at IS NOT NULL AND date(sent_at,'-7 hours')=?)<?) AND (m.step=0 OR m.due_at IS NOT NULL AND m.due_at<=?) ORDER BY CASE WHEN m.step=0 THEN 0 ELSE 1 END,m.step DESC,m.id LIMIT 1").bind(phoenixDate(),newLimit,at()).first();
+  // Initial prospect quota and follow-up quota are tracked independently.
+  const newLimit=Math.max(1,Math.min(20,Number(settings.daily_cap)));
+  const followupLimit=Math.max(1,Math.min(20,Number(env.OUTBOUND_FOLLOWUP_DAILY_CAP||5)));
+  const followupsToday=await db.prepare("SELECT COUNT(*) AS n FROM outbound_messages_v2 WHERE step>0 AND ((sent_at IS NOT NULL AND date(sent_at,'-7 hours')=?) OR (status='claimed' AND claimed_until>?))").bind(phoenixDate(),at()).first();
+  const row=await db.prepare("SELECT m.*,p.id AS prospect_id,p.organization,p.contact_name,p.segment,p.personalization_hook,p.fit_reason,p.email_normalized,p.approved_at,p.last_reply_at,p.solicitation_status FROM outbound_messages_v2 m JOIN outbound_enrollments_v2 e ON e.id=m.enrollment_id JOIN outbound_prospects_v2 p ON p.id=e.prospect_id LEFT JOIN email_suppressions s ON s.email_normalized=p.email_normalized WHERE m.status='queued' AND e.status IN ('queued','active') AND p.approved_at IS NOT NULL AND p.last_reply_at IS NULL AND p.stage NOT IN ('do_not_contact','converted','qualified','replied') AND p.solicitation_status='clear' AND s.email_normalized IS NULL AND ((m.step=0 AND (SELECT COUNT(*) FROM outbound_messages_v2 WHERE step=0 AND sent_at IS NOT NULL AND date(sent_at,'-7 hours')=?)<?) OR (m.step>0 AND m.due_at IS NOT NULL AND m.due_at<=? AND ?<?)) ORDER BY CASE WHEN m.step>0 THEN 0 ELSE 1 END,m.due_at,m.id LIMIT 1").bind(phoenixDate(),newLimit,at(),Number(followupsToday?.n||0),followupLimit).first();
   if(!row)return {ok:true,reason:'no_approved_due_messages'};
   const day=phoenixDate(),cap=effectiveDailyCap(settings,env,day);
   await db.prepare('INSERT OR IGNORE INTO outbound_daily_limits(phoenix_date,cap) VALUES(?,?)').bind(day,cap).run();
-  const quota=await db.prepare('UPDATE outbound_daily_limits SET reserved=reserved+1,cap=? WHERE phoenix_date=? AND sent+reserved<?').bind(cap,day,cap).run();
-  if(quota.meta.changes!==1)return {ok:true,reason:'daily_cap'};
+  if(row.step===0){
+   const quota=await db.prepare('UPDATE outbound_daily_limits SET reserved=reserved+1,cap=? WHERE phoenix_date=? AND sent+reserved<?').bind(cap,day,cap).run();
+   if(quota.meta.changes!==1)return {ok:true,reason:'daily_new_cap'};
+  }
   const optout=await unsubscribeUrl(env,{id:row.prospect_id,email_normalized:row.email_normalized});
   const content=renderTemplate(row,row.step,{address:env.OUTBOUND_MAILING_ADDRESS,optout:'Unsubscribe: '+optout});
   const messageId='ahi-outbound-'+row.id+'@azhomeinstalls.com';
@@ -159,14 +164,14 @@ export async function runGmail(env,renderTemplate,suppress,prepareDaily) {
   if(row.step && first?.subject) content.subject=first.subject;
   const raw=buildMime({to:row.email_normalized,...content,messageId,optout,replyToId:row.step?first?.rfc_message_id:undefined});
   const claim=await db.prepare("UPDATE outbound_messages_v2 SET status='claimed',attempts=attempts+1,claimed_until=?,subject=?,body_text=?,rfc_message_id=? WHERE id=? AND status='queued' AND EXISTS(SELECT 1 FROM outbound_settings WHERE id=1 AND paused=0 AND gmail_lease=?) AND NOT EXISTS(SELECT 1 FROM email_suppressions WHERE email_normalized=?) AND NOT EXISTS(SELECT 1 FROM outbound_prospects_v2 WHERE id=? AND last_reply_at IS NOT NULL)").bind(new Date(Date.now()+600000).toISOString(),content.subject,content.text,messageId,row.id,lease,row.email_normalized,row.prospect_id).run();
-  if(claim.meta.changes!==1){await db.prepare('UPDATE outbound_daily_limits SET reserved=reserved-1 WHERE phoenix_date=?').bind(day).run();return {ok:false,reason:'claim_cancelled'};}
+  if(claim.meta.changes!==1){if(row.step===0)await db.prepare('UPDATE outbound_daily_limits SET reserved=reserved-1 WHERE phoenix_date=?').bind(day).run();return {ok:false,reason:'claim_cancelled'};}
   try {
    const sent=await request(token,'/messages/send',{method:'POST',body:JSON.stringify({raw,...(row.step&&first?.gmail_thread_id?{threadId:first.gmail_thread_id}:{})})});
    if(!sent.id||!sent.threadId)throw Error('Send result lacks Gmail correlation');
    const sentAt=at();
    await db.batch([
     db.prepare("UPDATE outbound_messages_v2 SET status='sent',sent_at=?,provider_message_id=?,gmail_thread_id=? WHERE id=?").bind(sentAt,sent.id,sent.threadId,row.id),
-    db.prepare('UPDATE outbound_daily_limits SET reserved=reserved-1,sent=sent+1 WHERE phoenix_date=?').bind(day),
+    ...(row.step===0?[db.prepare('UPDATE outbound_daily_limits SET reserved=reserved-1,sent=sent+1 WHERE phoenix_date=?').bind(day)]:[]),
     db.prepare("UPDATE outbound_prospects_v2 SET stage=?,provider='gmail',updated_at=? WHERE id=? AND stage NOT IN ('do_not_contact','replied','converted','qualified')").bind(row.step?'follow_up':'sent',sentAt,row.prospect_id),
     db.prepare("UPDATE outbound_enrollments_v2 SET status=CASE WHEN status='stopped' THEN status ELSE 'active' END,started_at=COALESCE(started_at,?) WHERE id=?").bind(sentAt,row.enrollment_id),
     db.prepare('INSERT INTO outbound_events_v2(prospect_id,message_id,event_type,detail,created_at) VALUES(?,?,?,?,?)').bind(row.prospect_id,row.id,'sent',JSON.stringify({provider:'gmail'}),sentAt),
