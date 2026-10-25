@@ -63,13 +63,27 @@ h1 .gold{color:var(--gold)}
 <section class="bottom" aria-label="Share digital business card">
 <h2>Share our digital card</h2><p>Send the card link to a friend, neighbor, or property manager.</p>
 <button id="share" class="minor" type="button">Share Card</button>
+<div id="share-options" hidden style="margin-top:15px;display:none;gap:10px;flex-direction:column">
+<a class="minor" href="sms:?&body=AZHomeInstalls%20digital%20business%20card%3A%20https%3A%2F%2Fazhomeinstalls.com%2Fcard%2F">Share by Text</a>
+<a class="minor" href="mailto:?subject=AZHomeInstalls%20Digital%20Card&body=https%3A%2F%2Fazhomeinstalls.com%2Fcard%2F">Share by Email</a>
+<a class="minor" href="https://azhomeinstalls.com/card/">Open Card Link</a>
+</div>
 </section>
 <p class="legal">Phoenix and surrounding areas · Not a Licensed Contractor</p>
 </main>
 <script>
-document.getElementById('share').addEventListener('click',async function(){
-const url='https://azhomeinstalls.com/card/';
-if(navigator.share){try{await navigator.share({title:'AZHomeInstalls',text:'Residential Installation Services',url});return}catch(e){if(e.name==='AbortError')return}}
-try{await navigator.clipboard.writeText(url);this.textContent='Link Copied';}catch(e){window.prompt('Copy the digital card link:',url)}
+const shareButton=document.getElementById('share');
+const shareOptions=document.getElementById('share-options');
+shareButton.addEventListener('click',async function(){
+ const url='https://azhomeinstalls.com/card/';
+ if(navigator.share){
+   try{await navigator.share({title:'AZHomeInstalls',text:'Residential Installation Services',url});return}
+   catch(e){if(e.name==='AbortError')return}
+ }
+ if(navigator.clipboard && window.isSecureContext){
+   try{await navigator.clipboard.writeText(url);shareButton.textContent='Link Copied';shareOptions.style.display='flex';shareOptions.hidden=false;return}catch(e){}
+ }
+ shareOptions.hidden=false;shareOptions.style.display='flex';
+ shareButton.textContent='Choose Sharing Method';
 });
 </script></body></html>
