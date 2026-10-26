@@ -118,7 +118,7 @@ export function renderTemplate(p,step,footer) {
  // Imported research fields are internal evidence, never approved email copy.
  const initial=[template[1],template[2],template[3]].join('\n\n');
  const bodies=[initial,'Following up on my introduction. Would you like a short AZHomeInstalls service overview for future residential installation requests?','This is my final check-in. If installation support becomes useful, you can reply here. I will close out this outreach sequence.'];
- return {subject:'ADV: '+subjects[step],text:[greeting,'',bodies[step],'','Jay','AZHomeInstalls','https://azhomeinstalls.com/services/','Advertisement — Residential installation services.','Not a Licensed Contractor.',footer.address || '[MAILING ADDRESS REQUIRED]',footer.optout || '[UNSUBSCRIBE LINK REQUIRED]'].join('\n')};
+ return {subject:'ADV: '+subjects[step],text:[greeting,'',bodies[step],'','Jay','AZHomeInstalls','(480) 417-8002 · Text us','https://azhomeinstalls.com/services/','Advertisement — Residential installation services.','Not a Licensed Contractor.',footer.address || '[MAILING ADDRESS REQUIRED]',footer.optout || '[UNSUBSCRIBE LINK REQUIRED]'].join('\n')};
 }
 async function audit(env,id,type,detail={}) {
  await env.LEADS_DB.prepare('INSERT INTO outbound_events_v2(prospect_id,event_type,detail,created_at) VALUES(?,?,?,?)').bind(id,type,JSON.stringify(detail),now()).run();
