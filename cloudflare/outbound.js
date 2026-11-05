@@ -1,6 +1,8 @@
 import { gmailConfiguration, checkGmail, syncGmail, runGmail, sendGmailTest, gmailTestStatus } from './outbound-gmail.js';
 import { unsubscribe, unsubscribeUrl, recordEvent, stopForReply, linkLead, phoenixDate } from './outbound-controls.js';
 import { outboundProviderStatus, addProspectToInstantly, listInstantlyLeads, webhookAuthorized, normalizeInstantlyWebhook } from './outbound-provider.js';
+import { publicSourceUrl, solicitationPreflight } from './outbound-validation.js';
+import { prepareInventory, operationalReport } from './outbound-pipeline.js';
 // Provider synchronization is available; campaign launch remains gated.
 const SEGMENTS = new Set(['property_manager','design_studio','home_stager','realtor','moving_company','builder_new_community']);
 export const OFFSETS = [0,7,17];
@@ -8,73 +10,12 @@ export const normalizeEmail = value => String(value || '').trim().toLowerCase();
 const validEmail = value => /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(value);
 const now = () => new Date().toISOString();
 const json = (value,status=200) => new Response(JSON.stringify(value),{status,headers:{'Content-Type':'application/json','Cache-Control':'no-store'}});
-function publicUrl(value) {
- try {
-  const u = new URL(value);
-  if(u.protocol!=='https:' || u.username || u.password || !u.hostname.includes('.') ||
-    /^(localhost|127\.|10\.|192\.168\.|169\.254\.|0\.)/.test(u.hostname) ||
-    /^172\.(1[6-9]|2\d|3[01])\./.test(u.hostname)) return false;
-  return true;
- } catch { return false; }
-}
-const NO_SOLICIT_PATTERNS = [
- /\bno\s+solicitors?\b/i,
- /\bno\s+solicitation\b/i,
- /\bno\s+vendor\s+solicitation\b/i,
- /\bdo\s+not\s+solicit\b/i,
- /\bno\s+sales\s+solicitation\b/i
-];
-
-function htmlToText(html) {
- return String(html || "")
-  .replace(/<script[\s\S]*?<\/script>/gi," ")
-  .replace(/<style[\s\S]*?<\/style>/gi," ")
-  .replace(/<[^>]+>/g," ")
-  .replace(/&nbsp;/gi," ")
-  .replace(/&amp;/gi,"&")
-  .replace(/\s+/g," ")
-  .trim();
-}
-
-async function solicitationPreflight(env,p) {
- const checkedAt=now();
- let status="manual_required", note="";
- try {
-  const response=await fetch(p.source_url,{
-   method:"GET",
-   redirect:"manual",
-   signal:AbortSignal.timeout(10000),
-   headers:{"User-Agent":"AZHomeInstalls-Outreach-Compliance/1.0"}
-  });
-  const type=String(response.headers.get("content-type")||"").toLowerCase();
-  if(!response.ok) {
-   note="Source page returned HTTP "+response.status;
-  } else if(!type.includes("text/html") && !type.includes("text/plain")) {
-   note="Source is not machine-readable HTML/text; manual re-check required";
-  } else {
-   const text=htmlToText((await response.text()).slice(0,750000));
-   const hit=NO_SOLICIT_PATTERNS.find(rx=>rx.test(text));
-   if(hit) {
-    status="blocked";
-    note="Explicit no-solicitation language detected on public source";
-   } else {
-    status="clear";
-    note="No explicit no-solicitation phrase detected on reviewed public source";
-   }
-  }
- } catch(error) {
-  note="Source re-check failed: "+String(error?.message||error).slice(0,300);
- }
- await env.LEADS_DB.prepare("UPDATE outbound_prospects_v2 SET solicitation_checked_at=?,solicitation_status=?,solicitation_note=?,updated_at=? WHERE id=?")
-  .bind(checkedAt,status,note,checkedAt,p.id).run();
- return {status,note,checked_at:checkedAt};
-}
-
 export function validateProspect(body) {
  const p = {};
  for(const key of ['organization','contact_name','role','email','segment','city','source_url','fit_reason','personalization_hook','priority'])
   p[key] = String(body[key] || '').trim();
  p.wave_number = Number(body.wave_number || 1);
+ p.research_only = [true,1,'1','true'].includes(body.research_only) || [true,1,'1','true'].includes(body.discovery_only) ? 1 : 0;
  p.vendor_friendly = body.vendor_friendly === true || body.vendor_friendly === 1 || body.vendor_friendly === '1' ? 1 : 0;
  p.solicitation_checked_at = String(body.solicitation_checked_at || '').trim();
  if(['email','organization','contact_name'].some(k=>/[\r\n]/.test(p[k]))) throw Error('Single-line identity fields required');
@@ -84,7 +25,7 @@ export function validateProspect(body) {
  if(!Number.isInteger(p.wave_number) || p.wave_number < 1 || p.wave_number > 999) throw Error('Valid wave number required');
  if(!['A','B','C'].includes(p.priority || 'B')) p.priority = 'B';
  if(!p.solicitation_checked_at || Number.isNaN(Date.parse(p.solicitation_checked_at))) throw Error('Solicitation check timestamp required');
- if(!publicUrl(p.source_url)) throw Error('Public HTTPS source URL required');
+ if(!publicSourceUrl(p.source_url)) throw Error('Public HTTPS source URL required');
  for(const key of ['organization','city','fit_reason']) if(!p[key] || p[key].length>1000) throw Error('Missing or oversized '+key);
  if(p.email.length>254 || p.source_url.length>2000 || p.contact_name.length>200 || p.role.length>200 || p.personalization_hook.length>1000) throw Error('Field too long');
  p.domain = p.email_normalized.split('@')[1];
@@ -135,36 +76,17 @@ export async function suppress(env,email,reason,source) {
 }
 async function preview(env) {
  const {results=[]} = await env.LEADS_DB.prepare(
-  "SELECT p.*,m.id AS message_id,m.step,m.due_at FROM outbound_messages_v2 m JOIN outbound_enrollments_v2 e ON e.id=m.enrollment_id JOIN outbound_prospects_v2 p ON p.id=e.prospect_id LEFT JOIN email_suppressions s ON s.email_normalized=p.email_normalized WHERE m.status='queued' AND e.status='queued' AND p.approved_at IS NOT NULL AND p.last_reply_at IS NULL AND s.email_normalized IS NULL AND m.step=0 ORDER BY m.id LIMIT 20").all();
+  "SELECT p.*,m.id AS message_id,m.step,m.due_at FROM outbound_messages_v2 m JOIN outbound_enrollments_v2 e ON e.id=m.enrollment_id JOIN outbound_prospects_v2 p ON p.id=e.prospect_id LEFT JOIN email_suppressions s ON s.email_normalized=p.email_normalized WHERE m.status='queued' AND e.status='queued' AND p.approved_at IS NOT NULL AND p.last_reply_at IS NULL AND s.email_normalized IS NULL AND m.step=0 AND p.research_only=0 AND p.validation_status='verified' AND p.validation_expires_at>? ORDER BY m.id LIMIT 20").bind(now()).all();
  return Promise.all(results.map(async p=>({prospect_id:p.id,message_id:p.message_id,...renderTemplate(p,Number(p.step),{address:env.OUTBOUND_MAILING_ADDRESS,optout:env.OUTBOUND_UNSUBSCRIBE_SECRET ? 'Unsubscribe: '+await unsubscribeUrl(env,p) : undefined})})));
 }
 
 export async function prepareDailyProspects(env) {
- if(env.OUTBOUND_AUTO_ENROLL_WAVE1!=='true') return;
- const db=env.LEADS_DB, day=phoenixDate(), limit=Number(env.OUTBOUND_NEW_DAILY_CAP||5);
- const used=await db.prepare("SELECT COUNT(*) AS n FROM outbound_messages_v2 WHERE step=0 AND ((status='claimed' AND claimed_until>?) OR (sent_at IS NOT NULL AND date(sent_at,'-7 hours')=?))").bind(now(),day).first();
- let slots=Math.max(0,limit-Number(used?.n||0));
- if(!slots) return;
- const {results:rows=[]}=await db.prepare("SELECT p.* FROM outbound_prospects_v2 p LEFT JOIN outbound_wave_plan w ON w.prospect_id=p.id LEFT JOIN email_suppressions s ON s.email_normalized=p.email_normalized WHERE p.stage='prospect' AND p.wave_number=2 AND p.last_reply_at IS NULL AND p.solicitation_status IN ('reviewed','clear') AND s.email_normalized IS NULL AND NOT EXISTS(SELECT 1 FROM outbound_enrollments_v2 e WHERE e.prospect_id=p.id) ORDER BY CASE WHEN w.launch_day IS NULL THEN 999 ELSE w.launch_day END,w.send_order,p.priority,p.id LIMIT 8").all();
- for(const p of rows) {
-  if(!slots) break;
-  const checked=await solicitationPreflight(env,p);
-  if(checked.status==='blocked') {await suppress(env,p.email_normalized,'no_solicitation','public_source');continue;}
-  if(checked.status!=='clear') continue;
-  const time=now();
-  await db.batch([
-   db.prepare("UPDATE outbound_prospects_v2 SET approved_at=?,reviewed_by='Jay: daily five authorization 2026-10-07',stage='queued',updated_at=? WHERE id=? AND stage='prospect' AND solicitation_status='clear' AND NOT EXISTS(SELECT 1 FROM email_suppressions WHERE email_normalized=?)").bind(time,time,p.id,p.email_normalized),
-   db.prepare("INSERT OR IGNORE INTO outbound_enrollments_v2(prospect_id,created_at) SELECT id,? FROM outbound_prospects_v2 WHERE id=? AND stage='queued' AND approved_at IS NOT NULL").bind(time,p.id),
-   ...OFFSETS.map((offset,step)=>db.prepare("INSERT OR IGNORE INTO outbound_messages_v2(enrollment_id,step,day_offset,idempotency_key) SELECT id,?,?,? FROM outbound_enrollments_v2 WHERE prospect_id=?").bind(step,offset,'wave-v'+p.wave_number+':'+p.id+':'+step,p.id))
-  ]);
-  await audit(env,p.id,'approved',{reviewer:'Jay',source:'authorized_daily_wave2',daily_new_limit:limit});
-  slots--;
- }
+ return prepareInventory(env,suppress,OFFSETS);
 }
 
 export async function syncOutboundProvider(env) {
  if(!env.LEADS_DB) return {ok:false,reason:"database_unavailable"};
- if((env.OUTBOUND_PROVIDER||'gmail')==='gmail') return runGmail(env,renderTemplate,suppress,prepareDailyProspects);
+ if((env.OUTBOUND_PROVIDER||'gmail')==='gmail') {await prepareDailyProspects(env);return runGmail(env,renderTemplate,suppress);}
  const provider=(env.OUTBOUND_PROVIDER||'gmail')==='gmail'?gmailConfiguration(env):outboundProviderStatus(env);
  if(!provider.configured) return {ok:false,reason:"provider_not_configured",blockers:provider.blockers};
 
@@ -247,6 +169,7 @@ export async function outboundApi(request,env,url) {
    }
   }
   if(resource==='gmail-test-results' && request.method==='POST') return json(await gmailTestStatus(env,suppress));
+  if(resource==='operations' && request.method==='GET') return json(await operationalReport(env));
   if(resource==='status' && request.method==='GET') {
    const settings=await env.LEADS_DB.prepare('SELECT * FROM outbound_settings WHERE id=1').first();
    const provider=(env.OUTBOUND_PROVIDER||'gmail')==='gmail'?gmailConfiguration(env):outboundProviderStatus(env);
@@ -255,7 +178,7 @@ export async function outboundApi(request,env,url) {
     ...(!env.OUTBOUND_MAILING_ADDRESS?['Mailing address missing']:[]),
     ...(env.OUTBOUND_MAILBOX_APPROVED!=='true'?['Mailbox approval pending']:[]),
     ...((env.OUTBOUND_PROVIDER||'gmail')!=='gmail'?['Campaign sending configuration has not been verified']:[])];
-   return json({settings,provider,mailbox_approved:env.OUTBOUND_MAILBOX_APPROVED==='true',sending_identity:'outreach@azhomeinstalls.com',live_sending:blockers.length===0&&!settings.paused,mode:blockers.length===0?'ready':'preparation',blockers});
+   return json({operations:await operationalReport(env),settings,provider,mailbox_approved:env.OUTBOUND_MAILBOX_APPROVED==='true',sending_identity:'outreach@azhomeinstalls.com',live_sending:blockers.length===0&&!settings.paused,mode:blockers.length===0?'ready':'preparation',blockers});
   }
   if(resource==='prospects' && !parts[4]) {
    if(request.method==='GET') {
@@ -266,7 +189,7 @@ export async function outboundApi(request,env,url) {
     const p=validateProspect(await request.json()), at=now();
     if(await env.LEADS_DB.prepare('SELECT 1 FROM email_suppressions WHERE email_normalized=?').bind(p.email_normalized).first()) return json({error:'Contact is permanently suppressed'},409);
     if(await env.LEADS_DB.prepare('SELECT 1 FROM outbound_prospects_v2 WHERE email_normalized=?').bind(p.email_normalized).first()) return json({error:'Contact already exists'},409);
-    const r=await env.LEADS_DB.prepare("INSERT INTO outbound_prospects_v2(organization,domain,contact_name,role,email,email_normalized,segment,city,source_url,source_observed_at,fit_reason,personalization_hook,wave_number,priority,vendor_friendly,solicitation_checked_at,created_at,updated_at) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)").bind(p.organization,p.domain,p.contact_name,p.role,p.email,p.email_normalized,p.segment,p.city,p.source_url,at,p.fit_reason,p.personalization_hook,p.wave_number,p.priority,p.vendor_friendly,p.solicitation_checked_at,at,at).run();
+    const r=await env.LEADS_DB.prepare("INSERT INTO outbound_prospects_v2(organization,domain,contact_name,role,email,email_normalized,segment,city,source_url,source_observed_at,fit_reason,personalization_hook,wave_number,priority,vendor_friendly,solicitation_checked_at,created_at,updated_at,research_only) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)").bind(p.organization,p.domain,p.contact_name,p.role,p.email,p.email_normalized,p.segment,p.city,p.source_url,at,p.fit_reason,p.personalization_hook,p.wave_number,p.priority,p.vendor_friendly,p.solicitation_checked_at,at,at,p.research_only).run();
     const prospectId=r.meta.last_row_id;
     await env.LEADS_DB.prepare('INSERT INTO outbound_sources_v2(prospect_id,source_url,observed_at,evidence) VALUES(?,?,?,?)').bind(prospectId,p.source_url,at,p.fit_reason).run();
     await audit(env,prospectId,'prospect_created');
@@ -301,13 +224,13 @@ export async function outboundApi(request,env,url) {
     const reviewer=String(body.reviewed_by||'').trim();
     if(!reviewer || reviewer.length>200) return json({error:'Reviewer name required'},400);
     if(p.stage!=='prospect' || await env.LEADS_DB.prepare('SELECT 1 FROM email_suppressions WHERE email_normalized=?').bind(p.email_normalized).first()) return json({error:'Prospect cannot be enrolled'},409);
-    if(p.solicitation_status!=='clear') return json({error:'Prospect must pass source recheck before approval'},409);
+    if(p.research_only || p.validation_status!=='verified' || !p.validation_expires_at || p.validation_expires_at<=now() || p.solicitation_status!=='clear') return json({error:'Prospect must pass public business/email validation before approval'},409);
     if(await env.LEADS_DB.prepare('SELECT 1 FROM outbound_enrollments_v2 WHERE prospect_id=?').bind(id).first()) return json({error:'Prospect already enrolled'},409);
     const at=now();
     await env.LEADS_DB.batch([
-     env.LEADS_DB.prepare("UPDATE outbound_prospects_v2 SET approved_at=?,reviewed_by=?,stage='queued',updated_at=? WHERE id=? AND stage='prospect'").bind(at,reviewer,at,id),
-     env.LEADS_DB.prepare("INSERT OR IGNORE INTO outbound_enrollments_v2(prospect_id,created_at) VALUES(?,?)").bind(id,at),
-     ...OFFSETS.map((offset,step)=>env.LEADS_DB.prepare("INSERT OR IGNORE INTO outbound_messages_v2(enrollment_id,step,day_offset,idempotency_key) SELECT id,?,?,? FROM outbound_enrollments_v2 WHERE prospect_id=?").bind(step,offset,'wave-v'+p.wave_number+':'+id+':'+step,id))
+     env.LEADS_DB.prepare("UPDATE outbound_prospects_v2 SET approved_at=?,reviewed_by=?,stage='queued',updated_at=? WHERE id=? AND stage='prospect' AND research_only=0 AND last_reply_at IS NULL AND validation_status='verified' AND validation_expires_at>? AND NOT EXISTS(SELECT 1 FROM email_suppressions WHERE email_normalized=outbound_prospects_v2.email_normalized)").bind(at,reviewer,at,id,at),
+     env.LEADS_DB.prepare("INSERT OR IGNORE INTO outbound_enrollments_v2(prospect_id,created_at) SELECT id,? FROM outbound_prospects_v2 WHERE id=? AND stage='queued' AND approved_at IS NOT NULL AND research_only=0 AND last_reply_at IS NULL").bind(at,id),
+     ...OFFSETS.map((offset,step)=>env.LEADS_DB.prepare("INSERT OR IGNORE INTO outbound_messages_v2(enrollment_id,step,day_offset,idempotency_key) SELECT e.id,?,?,? FROM outbound_enrollments_v2 e JOIN outbound_prospects_v2 p ON p.id=e.prospect_id WHERE p.id=? AND e.status='queued' AND p.stage='queued'").bind(step,offset,'wave-v'+p.wave_number+':'+id+':'+step,id))
     ]);
     await audit(env,id,'approved',{reviewer}); return json({ok:true});
    }

@@ -10,12 +10,13 @@ body{font:16px system-ui;background:#f7f5ef;color:#171717;margin:0}main{max-widt
 <button id="connect">Connect</button><p id="feedback" role="status"></p></section>
 <section class="panel"><h2>Readiness</h2><button id="checkGmail">Check Workspace authorization</button><pre id="gmailCheck"></pre><div id="readiness">Connect to view readiness and remaining launch blockers.</div></section>
 <section class="panel"><h2>Controlled setup test</h2><p>Send one setup message to discoveruroptions@gmail.com. Campaign sending stays paused. Reply to the email, check results, then use its unsubscribe link and check again.</p><div class="actions"><button id="testSend">Send setup test</button><button id="testResults">Check test results</button></div><pre id="testOutput" role="status"></pre></section>
-<section class="panel"><h2>Campaign control</h2><p>The outbound engine must also limit total emails, including follow-ups. Sending remains blocked until its configuration is verified.</p><label>Daily cap<input id="dailyCap" type="number" min="1" max="20" value="20"></label><div class="actions"><button id="saveCap">Save limit & keep paused</button><button id="activateOas">Activate OAS</button><button id="pauseOas">Pause OAS</button></div></section>
+<section class="panel"><h2>Campaign control</h2><p>New introductions are limited to five per Arizona day. Scheduled follow-ups have a separate quota. Sending remains blocked until its configuration is verified.</p><label>New introductions per day<input id="dailyCap" type="number" min="1" max="5" value="5"></label><div class="actions"><button id="saveCap">Save limit & keep paused</button><button id="activateOas">Activate OAS</button><button id="pauseOas">Pause OAS</button></div></section>
+<section class="panel"><h2>Daily operations</h2><p>Public business and email evidence must be verified before approval. Inventory target: 25 approved, unsent prospects.</p><pre id="operations">Connect to view capacity, inventory, follow-ups and validation backlogs.</pre></section>
 <section class="panel"><h2>Add a public business contact</h2><form id="prospectForm"><div class="grid">
 <label>Organization<input name="organization" required maxlength="1000"></label><label>Segment<select name="segment"><option value="property_manager">Property manager</option><option value="design_studio">Design studio</option><option value="home_stager">Home stager</option><option value="realtor">Realtor / real-estate team</option><option value="moving_company">Moving company</option><option value="builder_new_community">Builder / new community</option></select></label>
 <label>Contact name<input name="contact_name" maxlength="200"></label><label>Role<input name="role" maxlength="200"></label>
 <label>Public business email<input name="email" type="email" required maxlength="254"></label><label>City<input name="city" required maxlength="1000"></label>
-<label>Wave<input name="wave_number" type="number" min="1" max="999" value="1" required></label><label>Priority<select name="priority"><option value="A">A</option><option value="B" selected>B</option><option value="C">C</option></select></label>
+<label>Wave<input name="wave_number" type="number" min="1" max="999" value="2" required></label><label>Priority<select name="priority"><option value="A">A</option><option value="B" selected>B</option><option value="C">C</option></select></label>
 <label>Vendor-friendly<select name="vendor_friendly"><option value="0" selected>No / not confirmed</option><option value="1">Yes</option></select></label><label>Solicitation checked<input name="solicitation_checked_at" type="datetime-local" required></label>
 <label class="wide">Public source URL<input name="source_url" type="url" required maxlength="2000"></label>
 <label class="wide">Verified fit reason<textarea name="fit_reason" required maxlength="1000" rows="3" placeholder="Factual reason this business fits AHI outreach."></textarea></label>
@@ -37,11 +38,12 @@ async function api(path,method='GET',body){
 async function perform(fn){try{await fn()}catch(e){feedback(e.message,true)}}
 async function refresh(){
  const [status,list,metrics,queue]=await Promise.all([api('status'),api('prospects'),api('metrics'),api('queue')]);
- $('dailyCap').value=status.settings.daily_cap;
+ $('dailyCap').value=Math.min(5,status.settings.daily_cap);
+ $('operations').textContent=JSON.stringify(status.operations,null,2);
  $('queue').replaceChildren();
  for(const m of queue.messages)$('queue').append(text('p',m.organization+' · Day '+(m.day_offset+1)+' · '+m.status+' · '+(m.due_at||'Scheduled after initial send')));
  if(!queue.messages.length)$('queue').append(text('p','No sequence messages yet.'));
- $('readiness').replaceChildren(text('p','Mode: '+status.mode+' · Daily cap: '+status.settings.daily_cap));
+ $('readiness').replaceChildren(text('p','Mode: '+status.mode+' · New introduction cap: '+status.operations.introductions.limit));
  status.blockers.forEach(v=>$('readiness').append(text('p',v)));
  const prospects=list.prospects;
  const counts={
@@ -87,6 +89,8 @@ async function refresh(){
   addInfo('City / area',p.city);
   addInfo('Segment',p.segment.replaceAll('_',' '));
   addInfo('Website',p.domain||'Not listed');
+  addInfo('Validation',p.validation_status+(p.research_only?' · Research only':''));
+  addInfo('Review note',p.validation_note||'Public business/email check pending');
   card.append(info);
   card.append(text('p',p.personalization_hook||p.fit_reason));
   const link=document.createElement('a');link.href=p.source_url;link.textContent='View public source';link.target='_blank';link.rel='noopener noreferrer';card.append(link);

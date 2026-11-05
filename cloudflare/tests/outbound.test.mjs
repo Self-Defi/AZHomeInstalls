@@ -36,7 +36,7 @@ test('Phoenix day and follow-ups use local day boundaries and weekday windows',a
 test('all sector emails exclude imported research notes',()=>{
  for(const segment of ['property_manager','home_stager','design_studio','realtor','moving_company','builder_new_community']) {
   const m=renderTemplate({...prospect,segment,personalization_hook:'Explicit vendor route; Property Services Manager contact is directly relevant.',fit_reason:'INTERNAL_ONLY'},0,{address:'Address',optout:'Unsubscribe'});
-  assert.match(m.text,/Hi Example Homes team,/);
+  assert.match(m.text,/^Example Homes,\n/);
   assert.match(m.text,/I’m Jay with AZHomeInstalls/);
   assert.doesNotMatch(m.text,/Explicit vendor route|Property Services Manager|INTERNAL_ONLY|starting-price/);
  }
@@ -49,4 +49,17 @@ test('launch allowance expires after its explicit Phoenix date',async()=>{
  assert.equal(effectiveDailyCap(settings,env,'2026-10-07'),5);
  assert.equal(effectiveDailyCap(settings,{},'2026-10-06'),5);
  assert.equal(effectiveDailyCap(settings,{...env,OUTBOUND_LAUNCH_EXTRA:'100'},'2026-10-06'),5);
+});
+
+test('introduction limit enforces the hard ceiling and fails closed on invalid configuration',async()=>{
+ const {dailyNewLimit}=await import('../outbound-limits.js');
+ assert.equal(dailyNewLimit({}),5);
+ assert.equal(dailyNewLimit({OUTBOUND_NEW_DAILY_CAP:'20'},{daily_cap:20}),5);
+ assert.equal(dailyNewLimit({OUTBOUND_NEW_DAILY_CAP:'2'},{daily_cap:5}),2);
+ assert.equal(dailyNewLimit({OUTBOUND_NEW_DAILY_CAP:'5'},{daily_cap:1}),1);
+ for(const value of ['invalid','',0,-1,1.5,Infinity]) {
+  assert.equal(dailyNewLimit({OUTBOUND_NEW_DAILY_CAP:value}),0);
+  assert.equal(dailyNewLimit({},{daily_cap:value}),0);
+ }
+ assert.equal(dailyNewLimit({},null),0);
 });
