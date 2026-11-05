@@ -80,8 +80,8 @@ async function preview(env) {
  return Promise.all(results.map(async p=>({prospect_id:p.id,message_id:p.message_id,...renderTemplate(p,Number(p.step),{address:env.OUTBOUND_MAILING_ADDRESS,optout:env.OUTBOUND_UNSUBSCRIBE_SECRET ? 'Unsubscribe: '+await unsubscribeUrl(env,p) : undefined})})));
 }
 
-export async function prepareDailyProspects(env) {
- return prepareInventory(env,suppress,OFFSETS);
+export async function prepareDailyProspects(env,dependencies) {
+ return prepareInventory(env,suppress,OFFSETS,dependencies);
 }
 
 export async function syncOutboundProvider(env) {
@@ -126,7 +126,7 @@ export async function syncOutboundProvider(env) {
  return {ok:true,checked:prospects.length,matched:items.length,updated,replies};
 }
 
-export async function outboundApi(request,env,url) {
+export async function outboundApi(request,env,url,{validateSource=solicitationPreflight}={}) {
  if(url.pathname==='/api/admin/outbound/unsubscribe') return unsubscribe(request,env,url,suppress);
  if(url.pathname==='/api/admin/outbound/provider-webhook') {
   if(request.method!=="POST") return json({error:"Method not allowed"},405);
@@ -215,7 +215,7 @@ export async function outboundApi(request,env,url) {
     await audit(env,id,'qualified');return json({ok:true});
    }
    if(action==='recheck') {
-    const result=await solicitationPreflight(env,p);
+    const result=await validateSource(env,p);
     if(result.status==='blocked') await suppress(env,p.email_normalized,'no_solicitation','public_source');
     await audit(env,id,'solicitation_rechecked',result);
     return json({ok:true,...result});

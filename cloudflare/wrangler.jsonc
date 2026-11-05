@@ -61,5 +61,8 @@
     "crons": [
       "*/5 * * * *"
     ]
-  }
+  },
+  "compatibility_flags": [
+    "global_fetch_strictly_public"
+  ]
 }

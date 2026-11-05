@@ -157,3 +157,71 @@ replacement's five-introduction limit locally before resuming.
 - Unit/integration concurrency tests use SQLite and Worker mocks; the local
   Wrangler smoke test uses D1 emulation. Production D1/Gmail behavior and recipient
   delivery were not exercised. Deployment must remain paused until reviewed.
+
+## Public-source SSRF and DNS rebinding hardening
+
+Public-source requests now have two independent boundaries:
+
+1. `public-source-network.js` rejects IP-literal URLs (including alternate numeric
+   spellings), internal/reserved hostname suffixes, credentials, non-HTTPS and
+   nonstandard ports. For each source hop it queries A and AAAA through the fixed
+   HTTPS Cloudflare DNS JSON endpoint. Both queries must succeed. Every returned
+   address and CNAME is validated; private, loopback, link-local, shared-address,
+   reserved/documentation, IPv4-mapped/translation and other non-global ranges
+   are rejected. Mixed public/private answers, inconsistent aliases, loops,
+   truncated/empty/oversized responses, partial-family failure and DNS errors
+   remain `manual_required` and invalidate previous evidence expiry.
+2. `public-source-fetch.js` uses only Cloudflare's public global `fetch()` with
+   `redirect: manual`, no caller credentials, no Host override, no
+   `resolveOverride`, and no origin, service or VPC binding. The deployment config
+   explicitly enables **`global_fetch_strictly_public`**. This prevents own-zone
+   URLs from using the privileged private-origin shortcut. The public-network
+   runtime egress boundary rejects private destinations when connecting, including
+   a DNS change after application preflight. A DNS precheck alone is not a
+   rebinding defense; the addresses are not claimed to be pinned.
+
+The validator repeats both gates on every redirect, including same-host path
+redirects and www transitions. Existing same-site, three-hop, ten-second,
+response-size, business/email-evidence, suppression and manual-review behavior
+remain. HTTPS certificate verification is left to the native fetch runtime.
+DNS/egress failures never trigger another transport or an approval fallback.
+
+**Deployment requirement:** retain `global_fetch_strictly_public` in Cloudflare
+configuration, including dashboard/API uploads. Do not add
+`global_fetch_private_origin`, route validation through a private binding, or run
+this module through an unrestricted Node HTTP implementation. If self-hosting
+workerd, its `globalOutbound` network must allow only `public`, as in the runtime
+fixture. Cloudflare's public-network guard is part of the security boundary.
+
+A pinned-IP socket approach was investigated but is not used: Workers' native
+`startTls({expectedServerHostname})` option can be rejected by runtime policy, and
+`cf.resolveOverride` is not an arbitrary external-host pinning mechanism. There
+is no custom TLS stack, certificate-validation bypass or experimental socket API.
+No new paid service, secret, or D1 migration is needed. The fixed DNS destination
+is `cloudflare-dns.com`; a restricted local development network must allow it to
+exercise real public-source lookups. Source failures remain in review if it is
+unavailable.
+
+Current validation: **50 Node tests passed**, zero failed/skipped, plus a native
+workerd isolation test covering **six actual public-network policy denials**.
+The application tests model post-preflight DNS changes and verify no fallback;
+the native test separately checks connection-time rejection rather than assuming
+that a mocked fetch enforces it. These are local tests, not a production probe.
+
+```sh
+# From cloudflare; workerd is available alongside Wrangler in the prepared tools.
+npm test
+node tests/run-public-egress.mjs /workspace/azhome-tools/node_modules/.bin/workerd
+/workspace/azhome-tools/node_modules/.bin/wrangler deploy --dry-run --outdir /workspace/azhome-ssrf-build
+```
+
+The native runner checks policy-denial diagnostics as well as test exit status,
+so ordinary DNS, TLS or connection failures cannot masquerade as a passing
+isolation check. No deployment, production D1 write or live email is part of
+these commands. Any rollback must retain the public-only routing flag and must
+not restore unrestricted source fetches.
+
+Runtime references:
+- [Cloudflare compatibility flags](https://developers.cloudflare.com/workers/configuration/compatibility-flags/)
+- [Public-only global fetch contract in workerd](https://github.com/cloudflare/workerd/blob/main/src/workerd/io/compatibility-date.capnp)
+- [Workers request options and resolveOverride scope](https://developers.cloudflare.com/workers/runtime-apis/request/)

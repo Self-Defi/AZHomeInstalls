@@ -14,7 +14,7 @@ const inventorySql=`SELECT COUNT(*) AS n FROM outbound_prospects_v2 p
  AND p.approved_at IS NOT NULL AND p.last_reply_at IS NULL AND p.stage='queued'
  AND p.validation_status='verified' AND p.validation_expires_at>? AND p.solicitation_status='clear'
  AND s.email_normalized IS NULL`;
-export async function prepareInventory(env,suppress,offsets) {
+export async function prepareInventory(env,suppress,offsets,{validateSource=solicitationPreflight}={}) {
  if(env.OUTBOUND_AUTO_ENROLL_WAVE1!=='true')return {reason:'automation_disabled'};
  const db=env.LEADS_DB,owner=crypto.randomUUID(),now=new Date().toISOString();
  const lease=await db.prepare('UPDATE outbound_settings SET pipeline_lease=?,pipeline_lease_until=? WHERE id=1 AND (pipeline_lease_until IS NULL OR pipeline_lease_until<?)')
@@ -37,7 +37,7 @@ export async function prepareInventory(env,suppress,offsets) {
    const lock=await db.prepare('SELECT 1 FROM outbound_settings WHERE id=1 AND pipeline_lease=? AND pipeline_lease_until>?').bind(owner,time).first();
    if(!lock)return {reason:'lease_expired',validated,enrolled,review};
    if(p.validation_status!=='verified'||!p.validation_expires_at||p.validation_expires_at<=time) {
-    const checked=await solicitationPreflight(env,p);
+    const checked=await validateSource(env,p);
     if(checked.status==='blocked'){await suppress(env,p.email_normalized,'no_solicitation','public_source');review++;continue;}
     if(checked.status!=='clear'){review++;continue;}validated++;
    }

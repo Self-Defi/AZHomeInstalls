@@ -1,12 +1,7 @@
 // Public evidence only. No email guessing, paid discovery service or automatic cross-site crawl.
-export function publicSourceUrl(value) {
- try {
-  const u=new URL(value), host=u.hostname.toLowerCase();
-  if(u.protocol!=='https:'||u.username||u.password||(u.port&&u.port!=='443'))return false;
-  if(!host.includes('.')||host.includes(':')||/^[\d.]+$/.test(host)||/(^|\.)(localhost|local|internal|test|invalid)$/.test(host))return false;
-  return true;
- } catch {return false;}
-}
+import { publicSourceUrl } from './public-source-network.js';
+import { fetchPublicSource } from './public-source-fetch.js';
+export { publicSourceUrl };
 const restricted=/\b(?:no\s+(?:vendor\s+|sales\s+)?solicitation|no\s+solicitors?|do\s+not\s+solicit)\b/i;
 const relevant={property_manager:/property\s+management|residential\s+management|residents|rental\s+homes/i,design_studio:/interior\s+design|residential\s+design|design\s+studio/i,home_stager:/home\s+staging|staging\s+(?:homes|services)|home\s+stager/i,realtor:/real\s+estate|realtor|realty/i,moving_company:/moving\s+(?:company|services)|movers|relocation/i,builder_new_community:/home\s+builder|new\s+homes|residential\s+construction/i};
 const textOf=html=>html.replace(/<script\b[\s\S]*?<\/script>/gi,' ').replace(/<style\b[\s\S]*?<\/style>/gi,' ').replace(/<[^>]*>/g,' ').replace(/&nbsp;/gi,' ').replace(/&amp;/gi,'&').replace(/\s+/g,' ').trim();
@@ -21,7 +16,7 @@ async function limitedBody(response) {
  const bytes=new Uint8Array(size);let offset=0;for(const chunk of chunks){bytes.set(chunk,offset);offset+=chunk.byteLength;}
  return new TextDecoder().decode(bytes);
 }
-export async function solicitationPreflight(env,p) {
+export async function solicitationPreflight(env,p,{fetchSource=fetchPublicSource}={}) {
  const checkedAt=new Date().toISOString();
  let status='manual_required',note='Public business evidence requires review',finalUrl=null;
  try {
@@ -30,7 +25,7 @@ export async function solicitationPreflight(env,p) {
   const signal=AbortSignal.timeout(10000);
   for(let hop=0;hop<=3;hop++) {
    if(seen.has(url.href))throw Error('Source redirect loop requires review');seen.add(url.href);
-   const response=await fetch(url.href,{method:'GET',redirect:'manual',signal,headers:{'User-Agent':'AZHomeInstalls-Outreach-Compliance/1.0'}});
+   const response=await fetchSource(url.href,{method:'GET',redirect:'manual',signal,headers:{'User-Agent':'AZHomeInstalls-Outreach-Compliance/1.0'}});
    if([301,302,303,307,308].includes(response.status)) {
     const location=response.headers.get('location');await response.body?.cancel();
     if(!location||hop===3)throw Error('Source redirect limit requires review');

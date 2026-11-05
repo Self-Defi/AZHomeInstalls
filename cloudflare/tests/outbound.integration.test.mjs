@@ -3,6 +3,10 @@ import assert from 'node:assert/strict';
 import { DatabaseSync } from 'node:sqlite';
 import { readFileSync } from 'node:fs';
 import { outboundApi } from '../outbound.js';
+import { solicitationPreflight } from '../outbound-validation.js';
+// These existing tests isolate evidence/business gates. SSRF tests exercise the
+// real DNS + pinned TLS transport separately, without replacing those checks.
+const validateSource=(env,p)=>solicitationPreflight(env,p,{fetchSource:(...args)=>globalThis.fetch(...args)});
 function fixture(){
  const db=new DatabaseSync(':memory:');
  db.exec(readFileSync(new URL('../migrations/0001_leads.sql',import.meta.url),'utf8'));
@@ -19,7 +23,7 @@ function fixture(){
  }}};
  const call=async(path,method='GET',body)=>{
   const url=new URL('https://example.com/api/admin/outbound/'+path);
-  const r=await outboundApi(new Request(url,{method,headers:{Authorization:'Bearer '+env.OUTBOUND_ADMIN_TOKEN},...(body?{body:JSON.stringify(body)}:{})}),env,url);
+  const r=await outboundApi(new Request(url,{method,headers:{Authorization:'Bearer '+env.OUTBOUND_ADMIN_TOKEN},...(body?{body:JSON.stringify(body)}:{})}),env,url,{validateSource});
   return {status:r.status,data:await r.json()};
  };
  return {db,call,env};
@@ -134,7 +138,8 @@ test('launch readiness exposes real blockers and never activates on credentials 
 
 import { runGmail, buildMime, syncGmail } from '../outbound-gmail.js';
 import { renderTemplate, suppress } from '../outbound.js';
-import { prepareDailyProspects } from '../outbound.js';
+import { prepareDailyProspects as prepareDailyProspectsImpl } from '../outbound.js';
+const prepareDailyProspects=env=>prepareDailyProspectsImpl(env,{validateSource});
 test('Wave 2 inventory is independent from five daily introductions and followups',async(t)=>{
  const {db,call,env}=fixture();gmailEnv(env);
  const saved=globalThis.fetch;
@@ -265,7 +270,7 @@ test('controlled Gmail test stays paused, sends once, detects reply and records 
   assert.equal(reply.reply_detected,true);assert.equal(reply.followups_cancelled,true);
   const {unsubscribeUrl}=await import('../outbound-controls.js');
   const url=new URL(await unsubscribeUrl(env,p));
-  const r=await outboundApi(new Request(url,{method:'POST'}),env,url);assert.equal(r.status,200);
+  const r=await outboundApi(new Request(url,{method:'POST'}),env,url,{validateSource});assert.equal(r.status,200);
   assert.equal((await call('gmail-test-results','POST',{})).data.unsubscribed,true);
   assert.equal(env.OUTBOUND_GMAIL_TESTED,'false');
  }finally{globalThis.fetch=saved;db.close()}
