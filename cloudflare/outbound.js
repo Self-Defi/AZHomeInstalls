@@ -142,7 +142,7 @@ async function preview(env) {
 export async function prepareDailyProspects(env) {
  if(env.OUTBOUND_AUTO_ENROLL_WAVE1!=='true') return;
  const db=env.LEADS_DB, day=phoenixDate(), limit=Number(env.OUTBOUND_NEW_DAILY_CAP||5);
- const used=await db.prepare("SELECT COUNT(*) AS n FROM outbound_messages_v2 WHERE step=0 AND (status IN ('queued','claimed') OR sent_at IS NOT NULL AND date(sent_at,'-7 hours')=?)").bind(day).first();
+ const used=await db.prepare("SELECT COUNT(*) AS n FROM outbound_messages_v2 WHERE step=0 AND ((status='claimed' AND claimed_until>?) OR (sent_at IS NOT NULL AND date(sent_at,'-7 hours')=?))").bind(now(),day).first();
  let slots=Math.max(0,limit-Number(used?.n||0));
  if(!slots) return;
  const {results:rows=[]}=await db.prepare("SELECT p.* FROM outbound_prospects_v2 p LEFT JOIN outbound_wave_plan w ON w.prospect_id=p.id LEFT JOIN email_suppressions s ON s.email_normalized=p.email_normalized WHERE p.stage='prospect' AND p.wave_number=2 AND p.last_reply_at IS NULL AND p.solicitation_status IN ('reviewed','clear') AND s.email_normalized IS NULL AND NOT EXISTS(SELECT 1 FROM outbound_enrollments_v2 e WHERE e.prospect_id=p.id) ORDER BY CASE WHEN w.launch_day IS NULL THEN 999 ELSE w.launch_day END,w.send_order,p.priority,p.id LIMIT 8").all();
@@ -301,12 +301,13 @@ export async function outboundApi(request,env,url) {
     const reviewer=String(body.reviewed_by||'').trim();
     if(!reviewer || reviewer.length>200) return json({error:'Reviewer name required'},400);
     if(p.stage!=='prospect' || await env.LEADS_DB.prepare('SELECT 1 FROM email_suppressions WHERE email_normalized=?').bind(p.email_normalized).first()) return json({error:'Prospect cannot be enrolled'},409);
-    if(p.solicitation_status==='blocked') return json({error:'Public source prohibits solicitation'},409);
+    if(p.solicitation_status!=='clear') return json({error:'Prospect must pass source recheck before approval'},409);
+    if(await env.LEADS_DB.prepare('SELECT 1 FROM outbound_enrollments_v2 WHERE prospect_id=?').bind(id).first()) return json({error:'Prospect already enrolled'},409);
     const at=now();
     await env.LEADS_DB.batch([
      env.LEADS_DB.prepare("UPDATE outbound_prospects_v2 SET approved_at=?,reviewed_by=?,stage='queued',updated_at=? WHERE id=? AND stage='prospect'").bind(at,reviewer,at,id),
      env.LEADS_DB.prepare("INSERT OR IGNORE INTO outbound_enrollments_v2(prospect_id,created_at) VALUES(?,?)").bind(id,at),
-     ...OFFSETS.map((offset,step)=>env.LEADS_DB.prepare("INSERT OR IGNORE INTO outbound_messages_v2(enrollment_id,step,day_offset,idempotency_key) SELECT id,?,?,? FROM outbound_enrollments_v2 WHERE prospect_id=?").bind(step,offset,'wave-v1:'+id+':'+step,id))
+     ...OFFSETS.map((offset,step)=>env.LEADS_DB.prepare("INSERT OR IGNORE INTO outbound_messages_v2(enrollment_id,step,day_offset,idempotency_key) SELECT id,?,?,? FROM outbound_enrollments_v2 WHERE prospect_id=?").bind(step,offset,'wave-v'+p.wave_number+':'+id+':'+step,id))
     ]);
     await audit(env,id,'approved',{reviewer}); return json({ok:true});
    }
