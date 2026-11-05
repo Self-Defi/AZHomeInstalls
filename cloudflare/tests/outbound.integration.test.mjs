@@ -31,6 +31,8 @@ test('review enrollment is idempotent and manual replies cancel all pending step
  const id=created.data.id;
  assert.equal((await call('preview')).data.messages.length,0);
  assert.equal((await call('prospects/'+id+'/approve','POST',{})).status,400);
+ assert.equal((await call('prospects/'+id+'/approve','POST',{reviewed_by:'Jay'})).status,409);
+ db.exec("UPDATE outbound_prospects_v2 SET solicitation_status='clear' WHERE id="+id);
  assert.equal((await call('prospects/'+id+'/approve','POST',{reviewed_by:'Jay'})).status,200);
  assert.equal((await call('prospects/'+id+'/approve','POST',{reviewed_by:'Jay'})).status,409);
  assert.equal(db.prepare('SELECT count(*) AS n FROM outbound_messages_v2').get().n,3);
@@ -44,7 +46,7 @@ test('permanent suppression blocks reimport and stops existing lead followups',a
  const {db,call}=fixture();
  db.exec("INSERT INTO leads(lead_code,name,phone,email,zip,service,description,scope_acknowledgment,next_followup_at) VALUES('AHI-1','Test','555','PUBLIC@example.com','85001','TV','Test','yes','2026-10-03')");
  const id=(await call('prospects','POST',prospect)).data.id;
- await call('prospects/'+id+'/approve','POST',{reviewed_by:'Jay'});
+ db.exec("UPDATE outbound_prospects_v2 SET solicitation_status='clear' WHERE id="+id);await call('prospects/'+id+'/approve','POST',{reviewed_by:'Jay'});
  assert.equal((await call('prospects/'+id+'/suppress','POST',{})).status,200);
  assert.equal((await call('prospects/'+id+'/suppress','POST',{})).status,200);
  assert.equal((await call('prospects','POST',prospect)).status,409);
@@ -85,7 +87,7 @@ test('correlated events deduplicate and stop replies, auto replies, and complain
   assert.equal(db.prepare('SELECT count(*) AS n FROM outbound_events_v2 WHERE external_event_id IS NOT NULL').get().n,1);
   db.close();
  }
- const {db,call}=fixture();await call('prospects','POST',prospect);await call('prospects/1/approve','POST',{reviewed_by:'Jay'});
+ const {db,call}=fixture();await call('prospects','POST',prospect);db.exec("UPDATE outbound_prospects_v2 SET solicitation_status='clear'");await call('prospects/1/approve','POST',{reviewed_by:'Jay'});
  assert.equal((await call('events','POST',{external_event_id:'x',message_id:1,event_type:'delivered'})).status,409);
  assert.equal((await call('events','POST',{external_event_id:'x',message_id:999,event_type:'reply'})).status,404);
  db.close();
