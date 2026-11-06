@@ -25,3 +25,21 @@ The tool does not alter the original backup or captured schema file.
 
 Use Python 3 with sqlite3, Node/npm, existing Git access and Wrangler auth. The
 bootstrap pins this tooling commit and never checks out or merges this branch.
+
+## Existing-evidence mode after API failure
+
+`offline_evidence.py` never invokes Cloudflare/Wrangler/HTTP. It accepts an
+explicit attestation of the already completed backup checksum check and does not
+rehash that backup. The operator must use that same unchanged file.
+
+It reconstructs the supplied sqlite_master CREATE definitions in an empty
+in-memory SQLite database and derives the structural PRAGMA metadata there.
+Captured automatic-index names are checked against recreated table constraints.
+If required table/index SQL is missing, it stops and prints one simple consolidated
+Wrangler catalog capture command, without executing it. It does not infer that
+an object is missing from production merely because a filtered capture omits it.
+
+The actual backup is restored/migrated only in a new private local directory.
+All production-schema results are explicitly snapshot/evidence-based; current
+production pause, data health or authorization are not silently assumed verified.
+No synthetic fixtures are rerun. No production write/deployment commands execute.
