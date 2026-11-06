@@ -50,7 +50,26 @@ def optional_runtime_schema(expected):
   db.execute(re.search(r'`(CREATE TABLE IF NOT EXISTS '+table+r'\b[\s\S]*?)`',source).group(1))
   db.execute(re.search(r'"(CREATE INDEX IF NOT EXISTS '+index+r'[^"\n]*)"',source).group(1))
  return snapshot(db)
+def application_schema(data):
+ # Only the operator-confirmed Cloudflare KV table is exempt. Its exact DDL
+ # and all derived constraints must still match the confirmed internal shape.
+ rows=[r for r in data['objects'] if (r['type'],r['name'])==('table','_cf_KV')]
+ if not rows:return data
+ ddl='CREATE TABLE _cf_KV (key TEXT PRIMARY KEY, value BLOB) WITHOUT ROWID'
+ db=sqlite3.connect(':memory:');db.execute(ddl);reference=snapshot(db);db.close()
+ if norm_sql(rows[0]['sql']).rstrip(' ;')!=norm_sql(ddl):return data
+ for section in ['columns','foreign_keys','indexes','index_columns','table_options']:
+  observed=[r for r in data[section] if (r.get('table') or r.get('name'))=='_cf_KV']
+  if sorted(observed,key=lambda r:json.dumps(r,sort_keys=True))!=sorted(reference[section],key=lambda r:json.dumps(r,sort_keys=True)):return data
+ # No user-defined index/trigger/view is excluded, even if attached to _cf_KV.
+ result={section:list(values) for section,values in data.items()}
+ result['objects']=[r for r in data['objects'] if (r['type'],r['name'])!=('table','_cf_KV')]
+ for section in ['columns','foreign_keys','indexes','index_columns','table_options']:
+  result[section]=[r for r in data[section] if (r.get('table') or r.get('name'))!='_cf_KV']
+ return result
+
 def comparison(expected,actual):
+ expected=application_schema(expected);actual=application_schema(actual)
  original_keys={(r['type'],r['name']) for r in expected['objects']}
  runtime=optional_runtime_schema(expected)
  optional_tables=({'estimate_responses','installation_slots'} & {r['name'] for r in actual['objects'] if r['type']=='table'})-{r['name'] for r in expected['objects'] if r['type']=='table'}

@@ -111,6 +111,8 @@ def main():
  summary={'overall':'PASS: captured-schema comparison and actual-backup offline rehearsal','schema_metadata':method,'backup_sha256':'PRIOR PASS accepted; not recomputed','offline_migration_0007':'PASS','integrity_check':'PASS','foreign_key_violations':0,'all_original_business_records_and_sequences_preserved':True,'backfilled_reservations':result['backfill_actual'],'fallback_day_candidates':result['fallback_day_candidates'],'production_api_requests':0,'production_writes':0,'deployments':0,'gmail_sends':0,'live_production_state':'Not rechecked; captured evidence only','production_execution_authorized':False}
  audit.write(out/'SANITIZED-REPORT.json',summary)
  print('BEGIN SANITIZED REPORT\n'+json.dumps(summary,indent=2)+'\nEND SANITIZED REPORT')
+ print('PROPOSED PRODUCTION COMMANDS ONLY; NOT EXECUTED. Live production pause, backup freshness and account must be reconfirmed before any write.')
+ print(shared.future_commands(out,repo,['npx.cmd','wrangler@4.158.0'],audit.KNOWN_COUNTS,[]))
 
 if __name__=='__main__':
  try:main()

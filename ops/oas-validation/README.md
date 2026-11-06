@@ -43,3 +43,12 @@ The actual backup is restored/migrated only in a new private local directory.
 All production-schema results are explicitly snapshot/evidence-based; current
 production pause, data health or authorization are not silently assumed verified.
 No synthetic fixtures are rerun. No production write/deployment commands execute.
+
+### Confirmed Cloudflare internal table
+Application equivalence excludes only table `_cf_KV` with the confirmed exact
+`key TEXT PRIMARY KEY, value BLOB` / `WITHOUT ROWID` definition and matching
+derived metadata. Altered definitions, explicit indexes, triggers, views and
+other unknown objects still fail. The table is never removed from the restored
+backup; its records remain covered by migration preservation hashes.
+The offline runner prints the existing proposed execution commands only after
+all actual-evidence checks pass; it never executes those commands.
