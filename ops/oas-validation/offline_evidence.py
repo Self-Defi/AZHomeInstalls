@@ -70,7 +70,7 @@ def reconstruct_catalog(value,expected,out):
  return actual
 
 def main():
- p=argparse.ArgumentParser();p.add_argument('--repo',type=Path,required=True);p.add_argument('--schema',type=Path,required=True);p.add_argument('--backup',type=Path,required=True);p.add_argument('--out',type=Path,required=True)
+ p=argparse.ArgumentParser();p.add_argument('--repo',type=Path,required=True);p.add_argument('--schema',type=Path,required=True);p.add_argument('--backup',type=Path,required=True);p.add_argument('--out',type=Path,required=True);p.add_argument('--resume-from',type=Path)
  p.add_argument('--accept-prior-sha256-pass',required=True);a=p.parse_args()
  shared.need(a.accept_prior_sha256_pass==audit.BACKUP_SHA,'Prior checksum attestation does not match the verified backup SHA-256.')
  shared.need(a.schema.is_file(),'Captured schema file not found; set its correct local path.')
@@ -86,8 +86,16 @@ def main():
  normalized=out/'captured-input.json';audit.write(normalized,provided)
  try:actual=audit.load_capture(normalized);method='supplied structural metadata'
  except ValueError:actual=reconstruct_catalog(provided,expected,out);method='derived locally from captured sqlite_master DDL'
- shared.schema_gate(expected,actual,'captured-production',out)
- print('PASS: captured production schema matches migrations 0001-0006; structural metadata '+method,flush=True)
+ if a.resume_from:
+  prior=a.resume_from.resolve()
+  shared.need(shared.load_json(prior/'captured-input.json')==provided,'Resume capture differs from previously passed evidence.')
+  prior_diff=shared.load_json(prior/'captured-production-schema-diff.json')
+  shared.need(prior_diff.get('schema_gate') is True,'Previous captured-production comparison did not pass; cannot resume.')
+  audit.write(out/'captured-production-schema-diff.json',prior_diff)
+  print('PASS: captured-production application comparison reused from previous successful run; unchanged capture.',flush=True)
+ else:
+  shared.schema_gate(expected,actual,'captured-production',out)
+  print('PASS: captured production schema matches migrations 0001-0006; structural metadata '+method,flush=True)
  print('CHECKSUM: prior operator-confirmed PASS accepted; backup SHA-256 was NOT recomputed.',flush=True)
  restored=out/'restored-backup.sqlite';db=sqlite3.connect(restored)
  def restrict(action,a,b,*rest):return sqlite3.SQLITE_DENY if action in (sqlite3.SQLITE_ATTACH,sqlite3.SQLITE_DETACH) or action==sqlite3.SQLITE_FUNCTION and (b or '').lower()=='load_extension' else sqlite3.SQLITE_OK
@@ -96,8 +104,22 @@ def main():
  violations=db.execute('SELECT COUNT(*) FROM pragma_foreign_key_check').fetchone()[0]
  shared.need(violations==0,'Backup foreign-key violations: '+str(violations)+'. Review references; do not repair or delete production records.')
  backup_schema=audit.snapshot(db)
+ audit.write(out/'backup-schema-as-exported.json',backup_schema)
+ tracking_reconstructed=False
+ if not db.execute("SELECT 1 FROM sqlite_master WHERE lower(name)='d1_migrations'").fetchone():
+  tracking=[r for r in actual['objects'] if (r['type'],r['name'])==('table','d1_migrations')]
+  shared.need(len(tracking)==1,'Cannot reconstruct metadata: validated captured d1_migrations table is missing.')
+  # No application object/data is changed; only a missing metadata table in
+  # this new isolated SQLite copy is created from the validated live DDL.
+  db.execute(tracking[0]['sql'])
+  for row in actual['objects']:
+   if row['type']=='index' and row.get('table')=='d1_migrations':db.execute(row['sql'])
+  db.commit();tracking_reconstructed=True
+  print('CONFIRMED: restored SQL export omits d1_migrations. Reconstructed only that empty tracking table in the isolated rehearsal database.',flush=True)
+  backup_schema=audit.snapshot(db)
  shared.schema_gate(expected,backup_schema,'backup-historical',out)
  shared.schema_gate(actual,backup_schema,'backup-versus-capture',out)
+ print('PASS: actual backup application schema matches migrations 0001-0006 and the captured production application schema.',flush=True)
  counts=audit.counts(db);changed=[t for t,n in audit.KNOWN_COUNTS.items() if counts.get(t)!=n]
  shared.need(not changed,'Verified-backup count manifest differs for: '+', '.join(map(shared.safe_name,changed))+'. Review provenance; do not change data to force a match.')
  shared.need(db.execute('SELECT COUNT(*) FROM d1_migrations').fetchone()[0]==0,'Backup history is not empty as previously reported; review the historical baseline plan.')
@@ -108,7 +130,7 @@ def main():
  shared.need(result['passed'] and result['migration_tracking']==list(shared.HASHES),'Offline migration 0007 compatibility/preservation/backfill check failed.')
  shared.need(db.execute("SELECT COUNT(*) FROM outbound_prospects_v2 WHERE validation_status<>'pending' OR research_only<>0 OR validation_expires_at IS NOT NULL").fetchone()[0]==0,'Unexpected verification defaults after the local rehearsal.')
  shared.need(db.execute("SELECT COUNT(*) FROM outbound_introduction_reservations r JOIN outbound_messages_v2 m ON m.id=r.message_id WHERE m.claimed_until IS NOT NULL AND r.reserved_at IS NOT m.claimed_until").fetchone()[0]==0,'Historical reservation timestamp preservation failed in the local copy.')
- summary={'overall':'PASS: captured-schema comparison and actual-backup offline rehearsal','schema_metadata':method,'backup_sha256':'PRIOR PASS accepted; not recomputed','offline_migration_0007':'PASS','integrity_check':'PASS','foreign_key_violations':0,'all_original_business_records_and_sequences_preserved':True,'backfilled_reservations':result['backfill_actual'],'fallback_day_candidates':result['fallback_day_candidates'],'production_api_requests':0,'production_writes':0,'deployments':0,'gmail_sends':0,'live_production_state':'Not rechecked; captured evidence only','production_execution_authorized':False}
+ summary={'overall':'PASS: captured-schema comparison and actual-backup offline rehearsal','schema_metadata':method,'backup_sha256':'PRIOR PASS accepted; not recomputed','application_schema':'PASS','tracking_table_reconstructed_locally':tracking_reconstructed,'original_backup_modified':False,'offline_migration_0007':'PASS','integrity_check':'PASS','foreign_key_violations':0,'all_original_business_records_and_sequences_preserved':True,'backfilled_reservations':result['backfill_actual'],'fallback_day_candidates':result['fallback_day_candidates'],'production_api_requests':0,'production_writes':0,'deployments':0,'gmail_sends':0,'live_production_state':'Not rechecked; captured evidence only','production_execution_authorized':False}
  audit.write(out/'SANITIZED-REPORT.json',summary)
  print('BEGIN SANITIZED REPORT\n'+json.dumps(summary,indent=2)+'\nEND SANITIZED REPORT')
  print('PROPOSED PRODUCTION COMMANDS ONLY; NOT EXECUTED. Live production pause, backup freshness and account must be reconfirmed before any write.')

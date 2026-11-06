@@ -52,3 +52,14 @@ other unknown objects still fail. The table is never removed from the restored
 backup; its records remain covered by migration preservation hashes.
 The offline runner prints the existing proposed execution commands only after
 all actual-evidence checks pass; it never executes those commands.
+
+### Export without migration history
+If and only if the restored export has no sqlite_master object named
+`d1_migrations`, the offline runner records its original schema and recreates
+that empty metadata table from the already validated production DDL, solely
+in the isolated SQLite copy. Both strict schema comparisons still run after
+this narrow normalization; existing tracking definitions/history are never
+replaced. The source SQL backup is opened read-only and is not rehashed.
+`--resume-from <previous-evidence>` reuses a successful captured-production
+comparison only when the captured JSON is unchanged. The actual backup checks
+and migration rehearsal continue, without production API requests.
