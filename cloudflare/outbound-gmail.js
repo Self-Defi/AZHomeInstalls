@@ -151,7 +151,7 @@ export async function runGmail(env,renderTemplate,suppress,prepareDaily) {
   const newLimit=dailyNewLimit(env,settings);
   const followupLimit=Math.max(1,Math.min(20,Number(env.OUTBOUND_FOLLOWUP_DAILY_CAP||5)));
   const followupsToday=await db.prepare("SELECT COUNT(*) AS n FROM outbound_messages_v2 WHERE step>0 AND ((sent_at IS NOT NULL AND date(sent_at,'-7 hours')=?) OR status='claimed')").bind(phoenixDate()).first();
-  const row=await db.prepare("SELECT m.*,p.id AS prospect_id,p.organization,p.contact_name,p.segment,p.personalization_hook,p.fit_reason,p.email_normalized,p.approved_at,p.last_reply_at,p.solicitation_status FROM outbound_messages_v2 m JOIN outbound_enrollments_v2 e ON e.id=m.enrollment_id JOIN outbound_prospects_v2 p ON p.id=e.prospect_id LEFT JOIN email_suppressions s ON s.email_normalized=p.email_normalized WHERE m.status='queued' AND e.status IN ('queued','active') AND p.approved_at IS NOT NULL AND p.last_reply_at IS NULL AND p.stage NOT IN ('do_not_contact','converted','qualified','replied') AND p.solicitation_status='clear' AND s.email_normalized IS NULL AND ((m.step=0 AND NOT EXISTS(SELECT 1 FROM outbound_introduction_reservations held WHERE held.message_id=m.id) AND p.research_only=0 AND p.validation_status='verified' AND p.validation_expires_at>? AND (SELECT COUNT(*) FROM outbound_messages_v2 WHERE step=0 AND sent_at IS NOT NULL AND date(sent_at,'-7 hours')=?)<?) OR (m.step>0 AND EXISTS(SELECT 1 FROM outbound_messages_v2 initial WHERE initial.enrollment_id=m.enrollment_id AND initial.step=0 AND initial.sent_at IS NOT NULL) AND (m.step=1 OR EXISTS(SELECT 1 FROM outbound_messages_v2 prior WHERE prior.enrollment_id=m.enrollment_id AND prior.step=1 AND prior.status='sent')) AND m.due_at IS NOT NULL AND m.due_at<=? AND ?<?)) ORDER BY CASE WHEN m.step>0 THEN 0 ELSE 1 END,m.due_at,m.id LIMIT 1").bind(at(),phoenixDate(),newLimit,at(),Number(followupsToday?.n||0),followupLimit).first();
+  const row=await db.prepare("SELECT m.*,p.id AS prospect_id,p.organization,p.contact_name,p.segment,p.personalization_hook,p.fit_reason,p.email_normalized,p.approved_at,p.last_reply_at,p.solicitation_status FROM outbound_messages_v2 m JOIN outbound_enrollments_v2 e ON e.id=m.enrollment_id JOIN outbound_prospects_v2 p ON p.id=e.prospect_id LEFT JOIN email_suppressions s ON s.email_normalized=p.email_normalized WHERE m.status='queued' AND e.status IN ('queued','active') AND p.approved_at IS NOT NULL AND p.last_reply_at IS NULL AND p.stage NOT IN ('do_not_contact','converted','qualified','replied') AND p.solicitation_status='clear' AND s.email_normalized IS NULL AND ((m.step=0 AND NOT EXISTS(SELECT 1 FROM outbound_introduction_reservations held WHERE held.message_id=m.id) AND p.research_only=0 AND length(trim(COALESCE(p.reviewed_by,'')))>0 AND (SELECT COUNT(*) FROM outbound_messages_v2 WHERE step=0 AND sent_at IS NOT NULL AND date(sent_at,'-7 hours')=?)<?) OR (m.step>0 AND EXISTS(SELECT 1 FROM outbound_messages_v2 initial WHERE initial.enrollment_id=m.enrollment_id AND initial.step=0 AND initial.sent_at IS NOT NULL) AND (m.step=1 OR EXISTS(SELECT 1 FROM outbound_messages_v2 prior WHERE prior.enrollment_id=m.enrollment_id AND prior.step=1 AND prior.status='sent')) AND m.due_at IS NOT NULL AND m.due_at<=? AND ?<?)) ORDER BY CASE WHEN m.step>0 THEN 0 ELSE 1 END,m.due_at,m.id LIMIT 1").bind(phoenixDate(),newLimit,at(),Number(followupsToday?.n||0),followupLimit).first();
   if(!row)return {ok:true,reason:'no_approved_due_messages'};
   // The historical setup-test allowance must never raise the introduction ceiling.
   const day=phoenixDate(),cap=newLimit;
@@ -180,8 +180,8 @@ export async function runGmail(env,renderTemplate,suppress,prepareDaily) {
     WHERE e.id=outbound_messages_v2.enrollment_id AND e.status IN ('queued','active') AND p.approved_at IS NOT NULL
     AND p.last_reply_at IS NULL AND p.stage NOT IN ('do_not_contact','converted','qualified','replied')
     AND p.solicitation_status='clear' AND NOT EXISTS(SELECT 1 FROM email_suppressions WHERE email_normalized=p.email_normalized)
-    AND (outbound_messages_v2.step>0 OR (p.research_only=0 AND p.validation_status='verified' AND p.validation_expires_at>?)))`)
-   .bind(new Date(Date.now()+600000).toISOString(),content.subject,content.text,messageId,row.id,lease,at(),at()).run();
+    AND (outbound_messages_v2.step>0 OR (p.research_only=0 AND length(trim(COALESCE(p.reviewed_by,'')))>0)))`)
+   .bind(new Date(Date.now()+600000).toISOString(),content.subject,content.text,messageId,row.id,lease,at()).run();
   if(claim.meta.changes!==1){
    await db.prepare('DELETE FROM outbound_introduction_reservations WHERE message_id=? AND owner=?').bind(row.id,lease).run();
    return {ok:false,reason:'claim_cancelled'};
@@ -195,11 +195,11 @@ export async function runGmail(env,renderTemplate,suppress,prepareDaily) {
   const permitted=await db.prepare(`SELECT 1 FROM outbound_messages_v2 m
    JOIN outbound_enrollments_v2 e ON e.id=m.enrollment_id JOIN outbound_prospects_v2 p ON p.id=e.prospect_id
    WHERE m.id=? AND m.status='claimed' AND e.status IN ('queued','active') AND p.last_reply_at IS NULL AND p.approved_at IS NOT NULL
-   AND p.solicitation_status='clear' AND (m.step>0 OR (p.research_only=0 AND p.validation_status='verified' AND p.validation_expires_at>?))
+   AND p.solicitation_status='clear' AND (m.step>0 OR (p.research_only=0 AND length(trim(COALESCE(p.reviewed_by,'')))>0))
    AND p.stage NOT IN ('do_not_contact','converted','qualified','replied')
    AND NOT EXISTS(SELECT 1 FROM email_suppressions WHERE email_normalized=p.email_normalized)
    AND EXISTS(SELECT 1 FROM outbound_settings WHERE id=1 AND paused=0 AND gmail_lease=? AND gmail_lease_until>?)`)
-   .bind(row.id,at(),lease,at()).first();
+   .bind(row.id,lease,at()).first();
   const lastLocal=new Date(Date.now()-7*3600000);
   if(!permitted||phoenixDate()!==day||[0,6].includes(lastLocal.getUTCDay())||lastLocal.getUTCHours()<9||lastLocal.getUTCHours()>=17){
    // No Gmail request has started, so these reservations can safely be released.
