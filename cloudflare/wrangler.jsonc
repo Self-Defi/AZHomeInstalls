@@ -31,7 +31,7 @@
     "OUTBOUND_MAILBOX_APPROVED": "true",
     "OUTBOUND_PROVIDER": "gmail",
     "OUTBOUND_NEW_DAILY_CAP": "5",
-    "OUTBOUND_AUTO_ENROLL_WAVE1": "true",
+    "OUTBOUND_AUTO_ENROLL_WAVE1": "false",
     "OUTBOUND_GMAIL_TESTED": "true",
     "DESTINATION_EMAIL": "cbp.cep@gmail.com",
     "FROM_EMAIL": "info@azhomeinstalls.com",
@@ -61,5 +61,8 @@
     "crons": [
       "*/5 * * * *"
     ]
-  }
+  },
+  "compatibility_flags": [
+    "global_fetch_strictly_public"
+  ]
 }

@@ -1,5 +1,9 @@
 # AHI outbound pilot
 
+For current Wave 2 limits, public validation, inventory, operations, rollout and
+rollback instructions, see [OAS reliability](OAS-RELIABILITY.md). The dated sections
+below describe earlier rollouts and may describe superseded quota behavior.
+
 ## Current operation — October 6, 2026
 
 The direct Gmail engine is live after controlled send, reply, public opt-out,
