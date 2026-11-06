@@ -76,7 +76,7 @@ export async function suppress(env,email,reason,source) {
 }
 async function preview(env) {
  const {results=[]} = await env.LEADS_DB.prepare(
-  "SELECT p.*,m.id AS message_id,m.step,m.due_at FROM outbound_messages_v2 m JOIN outbound_enrollments_v2 e ON e.id=m.enrollment_id JOIN outbound_prospects_v2 p ON p.id=e.prospect_id LEFT JOIN email_suppressions s ON s.email_normalized=p.email_normalized WHERE m.status='queued' AND e.status='queued' AND p.approved_at IS NOT NULL AND p.last_reply_at IS NULL AND s.email_normalized IS NULL AND m.step=0 AND p.research_only=0 AND p.validation_status='verified' AND p.validation_expires_at>? ORDER BY m.id LIMIT 20").bind(now()).all();
+  "SELECT p.*,m.id AS message_id,m.step,m.due_at FROM outbound_messages_v2 m JOIN outbound_enrollments_v2 e ON e.id=m.enrollment_id JOIN outbound_prospects_v2 p ON p.id=e.prospect_id LEFT JOIN email_suppressions s ON s.email_normalized=p.email_normalized WHERE m.status='queued' AND e.status='queued' AND p.approved_at IS NOT NULL AND p.last_reply_at IS NULL AND s.email_normalized IS NULL AND m.step=0 AND p.research_only=0 AND length(trim(COALESCE(p.reviewed_by,'')))>0 AND p.solicitation_status='clear' ORDER BY m.id LIMIT 20").all();
  return Promise.all(results.map(async p=>({prospect_id:p.id,message_id:p.message_id,...renderTemplate(p,Number(p.step),{address:env.OUTBOUND_MAILING_ADDRESS,optout:env.OUTBOUND_UNSUBSCRIBE_SECRET ? 'Unsubscribe: '+await unsubscribeUrl(env,p) : undefined})})));
 }
 
@@ -224,11 +224,11 @@ export async function outboundApi(request,env,url,{validateSource=solicitationPr
     const reviewer=String(body.reviewed_by||'').trim();
     if(!reviewer || reviewer.length>200) return json({error:'Reviewer name required'},400);
     if(p.stage!=='prospect' || await env.LEADS_DB.prepare('SELECT 1 FROM email_suppressions WHERE email_normalized=?').bind(p.email_normalized).first()) return json({error:'Prospect cannot be enrolled'},409);
-    if(p.research_only || p.validation_status!=='verified' || !p.validation_expires_at || p.validation_expires_at<=now() || p.solicitation_status!=='clear') return json({error:'Prospect must pass public business/email validation before approval'},409);
+    if(p.research_only || !p.source_url || !p.solicitation_checked_at || p.solicitation_status!=='clear') return json({error:'Documented pre-Wave screening and clear solicitation status required before approval'},409);
     if(await env.LEADS_DB.prepare('SELECT 1 FROM outbound_enrollments_v2 WHERE prospect_id=?').bind(id).first()) return json({error:'Prospect already enrolled'},409);
     const at=now();
     await env.LEADS_DB.batch([
-     env.LEADS_DB.prepare("UPDATE outbound_prospects_v2 SET approved_at=?,reviewed_by=?,stage='queued',updated_at=? WHERE id=? AND stage='prospect' AND research_only=0 AND last_reply_at IS NULL AND validation_status='verified' AND validation_expires_at>? AND NOT EXISTS(SELECT 1 FROM email_suppressions WHERE email_normalized=outbound_prospects_v2.email_normalized)").bind(at,reviewer,at,id,at),
+     env.LEADS_DB.prepare("UPDATE outbound_prospects_v2 SET approved_at=?,reviewed_by=?,stage='queued',updated_at=? WHERE id=? AND stage='prospect' AND research_only=0 AND last_reply_at IS NULL AND solicitation_status='clear' AND NOT EXISTS(SELECT 1 FROM email_suppressions WHERE email_normalized=outbound_prospects_v2.email_normalized)").bind(at,reviewer,at,id),
      env.LEADS_DB.prepare("INSERT OR IGNORE INTO outbound_enrollments_v2(prospect_id,created_at) SELECT id,? FROM outbound_prospects_v2 WHERE id=? AND stage='queued' AND approved_at IS NOT NULL AND research_only=0 AND last_reply_at IS NULL").bind(at,id),
      ...OFFSETS.map((offset,step)=>env.LEADS_DB.prepare("INSERT OR IGNORE INTO outbound_messages_v2(enrollment_id,step,day_offset,idempotency_key) SELECT e.id,?,?,? FROM outbound_enrollments_v2 e JOIN outbound_prospects_v2 p ON p.id=e.prospect_id WHERE p.id=? AND e.status='queued' AND p.stage='queued'").bind(step,offset,'wave-v'+p.wave_number+':'+id+':'+step,id))
     ]);
