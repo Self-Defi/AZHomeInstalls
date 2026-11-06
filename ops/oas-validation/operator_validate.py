@@ -148,6 +148,8 @@ Write-Output ('PASS: Worker deployment checkpoints; active version ' + $versionI
 # Do not restart outreach. Verify authenticated admin operations using existing
 # operator access. This Worker command does not publish static dashboard assets.
 '''
+ # Make every printed native command fail closed if copied into PowerShell.
+ text='\n'.join(line+("\nif ($LASTEXITCODE -ne 0) { throw 'STOP: preceding command failed; preserve state and investigate' }" if line.startswith('& ') else '') for line in text.splitlines())+'\n'
  (out/'NEXT-STEPS.txt').write_text(text,encoding='utf-8');return text
 
 def main():
