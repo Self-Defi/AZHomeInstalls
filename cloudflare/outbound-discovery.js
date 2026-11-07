@@ -12,9 +12,9 @@ const searches=[
  {segment:'moving_company',q:'Phoenix residential moving company contact email'},
  {segment:'builder_new_community',q:'Phoenix new home builder community contact email'}
 ];
-const badHost=/\\b(?:facebook|instagram|linkedin|yelp|yellowpages|mapquest|pinterest|houzz|angi|thumbtack|reddit|google|bing|brave|bbb|indeed|zillow|realtor\\.com)\\b/i;
-const clean=s=>String(s||'').replace(/<[^>]+>/g,' ').replace(/\\s+/g,' ').trim();
-const emailPattern=/[a-z0-9.!#$%&'*+/=?^_`{|}~-]+@[a-z0-9.-]+\\.[a-z]{2,}/gi;
+const badHost=/\b(?:facebook|instagram|linkedin|yelp|yellowpages|mapquest|pinterest|houzz|angi|thumbtack|reddit|google|bing|brave|bbb|indeed|zillow|realtor\.com)\b/i;
+const clean=s=>String(s||'').replace(/<[^>]+>/g,' ').replace(/\s+/g,' ').trim();
+const emailPattern=/[a-z0-9.!#$%&'*+/=?^_`{|}~-]+@[a-z0-9.-]+\.[a-z]{2,}/gi;
 const bounded=async response=>{if(Number(response.headers.get('content-length'))>300000)throw Error('large');const t=await response.text();if(t.length>300000)throw Error('large');return t};
 export async function discoverProspects(env,{fetchPage=fetchPublicSource,fetchSearch=fetch}={}){
  const key=String(env.OUTBOUND_BRAVE_SEARCH_API_KEY||'');
@@ -34,14 +34,14 @@ export async function discoverProspects(env,{fetchPage=fetchPublicSource,fetchSe
   if(found>=5)break;
   const url=String(result.url||'');
   if(!publicSourceUrl(url))continue;
-  const host=new URL(url).hostname.replace(/^www\\./,'');
+  const host=new URL(url).hostname.replace(/^www\./,'');
   if(badHost.test(host))continue;
   try{
    const page=await fetchPage(url,{method:'GET',redirect:'error',signal:AbortSignal.timeout(8000)});
-   if(!page.ok||!/text\\/html/i.test(page.headers.get('content-type')||''))continue;
+   if(!page.ok||!/text\/html/i.test(page.headers.get('content-type')||''))continue;
    const html=await bounded(page);
    const addresses=[...new Set((html.match(emailPattern)||[]).map(x=>x.toLowerCase()))].filter(e=>e.endsWith('@'+host)&&!/(example|noreply|no-reply|privacy|support@)/i.test(e)).slice(0,2);
-   const title=clean((html.match(/<title[^>]*>([\\s\\S]*?)<\\/title>/i)||[])[1]).split(/[|–—]/)[0].trim().slice(0,160);
+   const title=clean((html.match(/<title[^>]*>([\s\S]*?)<\/title>/i)||[])[1]).split(/[|–—]/)[0].trim().slice(0,160);
    if(!title||title.length<4)continue;
    for(const email of addresses){
     reviewed++;
