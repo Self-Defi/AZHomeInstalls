@@ -94,7 +94,7 @@ export async function syncGmail(env,suppress,tokenOverride) {
    let addressesFromNotice=[];
    if(!matched){
     const snippet=String(message.snippet||'');
-    const found=[...snippet.matchAll(/(?:message to|delivering (?:your )?message to|delivery to|delivered to)\\s+([a-z0-9.!#$%&'*+/=?^_`{|}~-]+@[a-z0-9.-]+\\.[a-z]{2,})/gi)].map(m=>m[1].toLowerCase());
+    const found=[...snippet.matchAll(/(?:message to|delivering (?:your )?message to|delivery to|delivered to)\s+([a-z0-9.!#$%&'*+/=?^_`{|}~-]+@[a-z0-9.-]+\.[a-z]{2,})/gi)].map(m=>m[1].toLowerCase());
     const addresses=[...new Set(found)];
     addressesFromNotice=addresses;
     if(addresses.length===1){
