@@ -87,9 +87,22 @@ export async function syncGmail(env,suppress,tokenOverride) {
    if(!incomingAfterSend(message,first.sent_at))continue;
    if(!/mailer-daemon|postmaster/i.test(header(message,'From'))&&!/delivery-status/i.test(header(message,'Content-Type')))continue;
    const row=await env.LEADS_DB.prepare('SELECT m.id,p.id AS prospect_id,p.email_normalized FROM outbound_messages_v2 m JOIN outbound_enrollments_v2 e ON e.id=m.enrollment_id JOIN outbound_prospects_v2 p ON p.id=e.prospect_id WHERE m.gmail_thread_id=? AND m.sent_at IS NOT NULL ORDER BY m.id DESC LIMIT 1').bind(message.threadId||'').first();
-   if(!row)await hold(message);
-   await suppress(env,row.email_normalized,'bounce','gmail_thread');
-   await env.LEADS_DB.prepare('INSERT OR IGNORE INTO outbound_events_v2(prospect_id,message_id,external_event_id,event_type,detail,created_at) VALUES(?,?,?,?,?,?)').bind(row.prospect_id,row.id,external,'hard_bounce',JSON.stringify({provider:'gmail',delivery_scan:true}),at()).run();
+   // Gmail can put a delivery status notification in a separate thread.
+   // Only correlate by an explicit failed recipient in the notification snippet,
+   // and only when exactly one previously-sent prospect matches. Never infer.
+   let matched=row;
+   if(!matched){
+    const snippet=String(message.snippet||'');
+    const found=[...snippet.matchAll(/(?:message to|delivering (?:your )?message to|delivery to)\\s+([a-z0-9.!#$%&'*+/=?^_`{|}~-]+@[a-z0-9.-]+\\.[a-z]{2,})/gi)].map(m=>m[1].toLowerCase());
+    const addresses=[...new Set(found)];
+    if(addresses.length===1){
+     const candidates=await env.LEADS_DB.prepare('SELECT m.id,p.id AS prospect_id,p.email_normalized FROM outbound_messages_v2 m JOIN outbound_enrollments_v2 e ON e.id=m.enrollment_id JOIN outbound_prospects_v2 p ON p.id=e.prospect_id WHERE p.email_normalized=? AND m.sent_at IS NOT NULL ORDER BY m.sent_at DESC LIMIT 2').bind(addresses[0]).all();
+     if(candidates.results?.length)matched=candidates.results[0];
+    }
+   }
+   if(!matched)await hold(message);
+   await suppress(env,matched.email_normalized,'bounce','gmail_delivery_notice');
+   await env.LEADS_DB.prepare('INSERT OR IGNORE INTO outbound_events_v2(prospect_id,message_id,external_event_id,event_type,detail,created_at) VALUES(?,?,?,?,?,?)').bind(matched.prospect_id,matched.id,external,'hard_bounce',JSON.stringify({provider:'gmail',delivery_scan:true}),at()).run();
   }
  }
  const {results:rows=[]}=await env.LEADS_DB.prepare("SELECT m.id,m.gmail_thread_id,m.sent_at,p.id AS prospect_id,p.email_normalized FROM outbound_messages_v2 m JOIN outbound_enrollments_v2 e ON e.id=m.enrollment_id JOIN outbound_prospects_v2 p ON p.id=e.prospect_id WHERE m.gmail_thread_id IS NOT NULL AND p.last_reply_at IS NULL AND p.stage NOT IN ('do_not_contact','converted') ORDER BY m.id LIMIT 501").all();
