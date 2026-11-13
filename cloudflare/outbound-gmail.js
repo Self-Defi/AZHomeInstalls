@@ -91,14 +91,22 @@ export async function syncGmail(env,suppress,tokenOverride) {
    // Only correlate by an explicit failed recipient in the notification snippet,
    // and only when exactly one previously-sent prospect matches. Never infer.
    let matched=row;
+   let addressesFromNotice=[];
    if(!matched){
     const snippet=String(message.snippet||'');
-    const found=[...snippet.matchAll(/(?:message to|delivering (?:your )?message to|delivery to)\\s+([a-z0-9.!#$%&'*+/=?^_`{|}~-]+@[a-z0-9.-]+\\.[a-z]{2,})/gi)].map(m=>m[1].toLowerCase());
+    const found=[...snippet.matchAll(/(?:message to|delivering (?:your )?message to|delivery to|delivered to)\\s+([a-z0-9.!#$%&'*+/=?^_`{|}~-]+@[a-z0-9.-]+\\.[a-z]{2,})/gi)].map(m=>m[1].toLowerCase());
     const addresses=[...new Set(found)];
+    addressesFromNotice=addresses;
     if(addresses.length===1){
      const candidates=await env.LEADS_DB.prepare('SELECT m.id,p.id AS prospect_id,p.email_normalized FROM outbound_messages_v2 m JOIN outbound_enrollments_v2 e ON e.id=m.enrollment_id JOIN outbound_prospects_v2 p ON p.id=e.prospect_id WHERE p.email_normalized=? AND m.sent_at IS NOT NULL ORDER BY m.sent_at DESC LIMIT 2').bind(addresses[0]).all();
      if(candidates.results?.length)matched=candidates.results[0];
     }
+   }
+   if(!matched && addressesFromNotice.length===1){
+    // A bounce for a mailbox outside the OAS ledger must not stop OAS.
+    await env.LEADS_DB.prepare('INSERT OR IGNORE INTO outbound_events_v2(external_event_id,event_type,detail,created_at) VALUES(?,?,?,?)')
+      .bind(external,'unrelated_delivery_failure',JSON.stringify({provider:'gmail',delivery_scan:true}),at()).run();
+    continue;
    }
    if(!matched)await hold(message);
    await suppress(env,matched.email_normalized,'bounce','gmail_delivery_notice');
