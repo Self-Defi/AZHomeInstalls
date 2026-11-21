@@ -1,5 +1,7 @@
 # AHI outbound pilot
 
+For ownership, reuse permissions, and client deployment terms, see [OAS licensing](OAS-LICENSING.md).
+
 For current Wave 2 limits, public validation, inventory, operations, rollout and
 rollback instructions, see [OAS reliability](OAS-RELIABILITY.md). The dated sections
 below describe earlier rollouts and may describe superseded quota behavior.
