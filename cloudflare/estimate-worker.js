@@ -1,3 +1,4 @@
+import { discoverProspects } from './outbound-discovery.js';
 const MAX_TOTAL_BYTES = 4 * 1024 * 1024;
 import { outboundApi, syncOutboundProvider } from "./outbound.js";
 const ALLOWED_TYPES = new Set(["image/jpeg", "image/png", "image/webp"]);
@@ -817,6 +818,8 @@ async function handleEstimateResponseApi(request,env,url){
 
 export default {
   async scheduled(event, env, ctx) {
+    if(new Date(event.scheduledTime).getUTCHours()===14 && new Date(event.scheduledTime).getUTCMinutes()===0) ctx.waitUntil(discoverProspects(env).catch(error=>console.error('Outbound discovery failed',{message:String(error)})));
+
     ctx.waitUntil(Promise.all([
       // Keep estimate follow-ups hourly while outbound dispatch runs every five minutes.
       new Date(event.scheduledTime).getUTCMinutes()===0 ? processDueFollowups(env) : Promise.resolve(),
