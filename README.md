@@ -20,3 +20,7 @@ Static HTML/CSS/JS, intended for deployment through Cloudflare Pages.
 - White: `#FFFFFF`
 - Domain: `azhomeinstalls.com`
 - Email: `info@azhomeinstalls.com`
+
+## Outbound Automation System
+
+The [OAS licensing notice](cloudflare/OAS-LICENSING.md) identifies Self Defi Advisory as the copyright holder for its original AHI Outbound Automation System code and documents how to request permission for client use.
